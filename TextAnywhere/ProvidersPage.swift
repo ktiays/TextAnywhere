@@ -34,7 +34,7 @@ struct ProvidersPage: View {
                         popoverPresenter.present(
                             content: {
                                 ProviderMenuContent(selectedProvider: $selectedProvider)
-                                    .frame(maxWidth: 320, maxHeight: 280)
+                                    .frame(maxWidth: 320, maxHeight: 220)
                             },
                             relativeTo: buttonView
                         )
@@ -80,39 +80,43 @@ private struct ProviderMenuContent: View {
 
             }
             .textFieldStyle(.plain)
-            .padding(10)
+            .padding()
             Divider()
-            List {
-                ForEach(Provider.presets) { provider in
-                    HStack {
-                        provider.iconView()
-                            .frame(height: 16)
-                        Text(provider.name)
-                        Spacer()
-                    }
-                    .frame(maxWidth: .infinity)
-                    .padding(.vertical, 10)
-                    .padding(.horizontal, 12)
-                    .background {
-                        if highlightedProvider == provider {
-                            RoundedRectangle(cornerRadius: 10)
-                                .foregroundStyle(.accent)
-                                .opacity(0.1)
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(Provider.presets) { provider in
+                        HStack {
+                            provider.iconView()
+                                .frame(height: 16)
+                            Text(provider.name)
+                            Spacer()
+                        }
+                        .frame(maxWidth: .infinity)
+                        .padding(.vertical, 10)
+                        .padding(.horizontal, 12)
+                        .background {
+                            if highlightedProvider == provider {
+                                RoundedRectangle(cornerRadius: 10)
+                                    .foregroundStyle(.accent)
+                                    .opacity(0.1)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                        .onHover { isHover in
+                            if isHover {
+                                highlightedProvider = provider
+                            }
+                        }
+                        .onTapGesture {
+                            selectedProvider = provider
                         }
                     }
-                    .onHover { isHover in
-                        if isHover {
-                            highlightedProvider = provider
-                        }
-                    }
-                    .onTapGesture {
-                        selectedProvider = provider
-                    }
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets())
                 }
-                .listRowSeparator(.hidden)
-                .listRowInsets(EdgeInsets())
+                .padding(.horizontal, 6)
             }
-            .listStyle(.plain)
+            .contentMargins(.vertical, 6)
             .scrollContentBackground(.hidden)
         }
         .fontDesign(.rounded)
