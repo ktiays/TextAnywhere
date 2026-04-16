@@ -32,7 +32,10 @@ struct ProvidersPage: View {
                             return
                         }
                         popoverPresenter.present(
-                            content: ProviderMenuContent(),
+                            content: {
+                                ProviderMenuContent(selectedProvider: $selectedProvider)
+                                    .frame(maxWidth: 320, maxHeight: 280)
+                            },
                             relativeTo: buttonView
                         )
                     } label: {
@@ -58,49 +61,70 @@ struct ProvidersPage: View {
         }
         .fontDesign(.rounded)
     }
-
-    private var providerPickerContent: some View {
-        VStack(spacing: 0) {
-            TextField("Search provider", text: $searchProviderKeyword)
-                .textFieldStyle(.roundedBorder)
-                .padding()
-
-            Divider()
-
-            List(filteredProviders) { provider in
-                Button {
-                    selectedProvider = provider
-                    popoverPresenter.dismiss()
-                } label: {
-                    HStack(spacing: 8) {
-                        provider.iconView()
-                            .frame(width: 16, height: 16)
-                        Text(provider.name)
-                        Spacer()
-                    }
-                }
-                .buttonStyle(.plain)
-            }
-            .frame(minHeight: 120)
-        }
-        .frame(width: 240)
-        .background(.regularMaterial)
-        .cornerRadius(12)
-    }
 }
 
 private struct ProviderMenuContent: View {
-    
+
+    @Binding var selectedProvider: Provider
     @State private var searchKeyword: String = ""
     
+    @State private var highlightedProvider: Provider?
+
+    init(selectedProvider: Binding<Provider>) {
+        _selectedProvider = selectedProvider
+    }
+
     var body: some View {
-        TextField(text: $searchKeyword) {
-            
+        VStack(spacing: 0) {
+            TextField(text: $searchKeyword, prompt: Text("Search")) {
+
+            }
+            .textFieldStyle(.plain)
+            .padding(10)
+            Divider()
+            List {
+                ForEach(Provider.presets) { provider in
+                    HStack {
+                        provider.iconView()
+                            .frame(height: 16)
+                        Text(provider.name)
+                        Spacer()
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.vertical, 10)
+                    .padding(.horizontal, 12)
+                    .background {
+                        if highlightedProvider == provider {
+                            RoundedRectangle(cornerRadius: 10)
+                                .foregroundStyle(.accent)
+                                .opacity(0.1)
+                        }
+                    }
+                    .onHover { isHover in
+                        if isHover {
+                            highlightedProvider = provider
+                        }
+                    }
+                    .onTapGesture {
+                        selectedProvider = provider
+                    }
+                }
+                .listRowSeparator(.hidden)
+                .listRowInsets(EdgeInsets())
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
         }
+        .fontDesign(.rounded)
     }
 }
 
 #Preview {
     ProvidersPage()
         .frame(minWidth: 400)
+}
+
+#Preview {
+    @Previewable @State var selectedProvider: Provider = Provider.presets[0]
+    ProviderMenuContent(selectedProvider: $selectedProvider)
 }

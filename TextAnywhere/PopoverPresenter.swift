@@ -12,22 +12,18 @@ final class PopoverPanelPresenter: NSObject, NSPopoverDelegate {
     private var fakePositioningView: NSView?
     private var isClosing = false
 
-    func present<Content: View>(
-        content: Content,
-        relativeTo positioningView: NSView
-    ) {
+    func present<Content>(@ViewBuilder content: () -> Content, relativeTo positioningView: NSView) where Content: View {
         dismiss()
         isClosing = false
 
-        let hostingController = NSHostingController(rootView: AnyView(content))
+        let screenSize = positioningView.window?.screen?.visibleFrame.size ?? .zero
+
+        let hostingController = NSHostingController(rootView: content())
+        let idealSize = hostingController.sizeThatFits(in: screenSize)
         let view = hostingController.view
-        view.frame = NSRect(origin: .zero, size: NSSize(width: 1000, height: 1000))
+        view.frame = NSRect(origin: .zero, size: idealSize)
         view.layout()
-        let fittingSize = view.fittingSize
-        hostingController.preferredContentSize = NSSize(
-            width: max(fittingSize.width, 200),
-            height: max(fittingSize.height, 100)
-        )
+        hostingController.preferredContentSize = idealSize
 
         let popover = NSPopover()
         popover.delegate = self
@@ -39,11 +35,7 @@ final class PopoverPanelPresenter: NSObject, NSPopoverDelegate {
         positioningView.addSubview(fakeView)
         self.fakePositioningView = fakeView
 
-        popover.show(
-            relativeTo: fakeView.bounds,
-            of: fakeView,
-            preferredEdge: .minY
-        )
+        popover.show(relativeTo: fakeView.bounds, of: fakeView, preferredEdge: .minY)
 
         // Move the fake view off-screen so the arrow disappears.
         fakeView.frame = NSRect(x: 0, y: -1000, width: 1, height: 1)
@@ -90,7 +82,7 @@ final class PopoverPanelPresenter: NSObject, NSPopoverDelegate {
 }
 
 private struct PopoverAnchorReader: NSViewRepresentable {
-    
+
     @Binding var view: NSView?
 
     func makeNSView(context: Context) -> NSView {
@@ -105,6 +97,7 @@ private struct PopoverAnchorReader: NSViewRepresentable {
 }
 
 extension View {
+
     func popoverAnchor(_ view: Binding<NSView?>) -> some View {
         self.background(PopoverAnchorReader(view: view))
     }
