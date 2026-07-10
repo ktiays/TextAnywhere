@@ -5,22 +5,115 @@
 
 import SwiftUI
 
+private enum SettingsPane: Hashable {
+
+    case general
+    case provider(ProviderIdentifier)
+
+    var title: String {
+        switch self {
+        case .general:
+            "General"
+        case .provider(let identifier):
+            Provider.provider(for: identifier).name
+        }
+    }
+}
+
 struct SettingsView: View {
 
     let controller: AppController
 
+    @State private var selectedPane = SettingsPane.general
+
     var body: some View {
-        TabView {
-            GeneralSettingsView(controller: controller)
-                .tabItem {
+        NavigationSplitView(columnVisibility: .constant(.doubleColumn)) {
+            List(selection: $selectedPane) {
+                Section {
                     Label("General", systemImage: "gearshape")
+                        .tag(SettingsPane.general)
                 }
 
-            ProvidersPage(controller: controller)
-                .tabItem {
-                    Label("Providers", systemImage: "laser.burst")
+                Section("Providers") {
+                    ForEach(Provider.presets) { provider in
+                        HStack(spacing: 8) {
+                            provider.iconView()
+                                .frame(width: 16, height: 16)
+                            Text(provider.name)
+                            Spacer()
+                            Circle()
+                                .fill(
+                                    controller.settings.isProviderEnabled(provider.id)
+                                        ? Color.green
+                                        : Color.secondary.opacity(0.25)
+                                )
+                                .frame(width: 6, height: 6)
+                                .accessibilityLabel(
+                                    controller.settings.isProviderEnabled(provider.id)
+                                        ? "Enabled"
+                                        : "Disabled"
+                                )
+                        }
+                        .tag(SettingsPane.provider(provider.id))
+                    }
+                }
+            }
+            .toolbar {
+                ToolbarItem(placement: .navigation) {
+                    Text(selectedPane.title)
+                        .font(.title3)
+                        .fontWeight(.bold)
+                }
+                .sharedBackgroundVisibility(.hidden)
+            }
+            .toolbar(removing: .sidebarToggle)
+            .navigationSplitViewColumnWidth(220)
+        } detail: {
+            selectedDetail
+                .formStyle(.grouped)
+                .scrollEdgeEffectStyle(.soft, for: .all)
+                .scrollContentBackground(.hidden)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .toolbar {
+                    if case .provider(let identifier) = selectedPane {
+                        ToolbarSpacer(.flexible, placement: .primaryAction)
+                        ToolbarItem(placement: .primaryAction) {
+                            Toggle(
+                                "Enabled",
+                                isOn: providerEnabledBinding(for: identifier)
+                            )
+                            .toggleStyle(.switch)
+                            .controlSize(.small)
+                            .help("Make this provider available in the translation editor")
+                        }
+                        .sharedBackgroundVisibility(.hidden)
+                    }
                 }
         }
-        .frame(minWidth: 560, minHeight: 420)
+        .navigationSplitViewStyle(.balanced)
+        .frame(width: 720)
+        .frame(minHeight: 400)
+    }
+
+    @ViewBuilder
+    private var selectedDetail: some View {
+        switch selectedPane {
+        case .general:
+            GeneralSettingsView(controller: controller)
+        case .provider(let identifier):
+            ProvidersPage(
+                controller: controller,
+                provider: Provider.provider(for: identifier)
+            )
+        }
+    }
+
+    private func providerEnabledBinding(
+        for providerID: ProviderIdentifier
+    ) -> Binding<Bool> {
+        Binding(
+            get: { controller.settings.isProviderEnabled(providerID) },
+            set: { controller.settings.setProviderEnabled($0, for: providerID) }
+        )
     }
 }

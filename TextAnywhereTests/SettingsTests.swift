@@ -22,6 +22,9 @@ final class SettingsTests: XCTestCase {
         settings.setBaseURL("https://example.com/v1", for: .openRouter)
         settings.setModelID("example/model", for: .openRouter)
         settings.setThinkingEnabled(true, for: .openRouter)
+        settings.isTrayEnabled = false
+        settings.setProviderEnabled(true, for: .openRouter)
+        settings.setProviderEnabled(false, for: .bailian)
         settings.setCachedModels(
             [ModelDescriptor(id: "example/model", displayName: "Example")],
             for: .openRouter
@@ -34,6 +37,9 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(restored.modelID(for: .openRouter), "example/model")
         XCTAssertTrue(restored.thinkingEnabled(for: .openRouter))
         XCTAssertFalse(restored.thinkingEnabled(for: .anthropic))
+        XCTAssertFalse(restored.isTrayEnabled)
+        XCTAssertTrue(restored.isProviderEnabled(.openRouter))
+        XCTAssertFalse(restored.isProviderEnabled(.bailian))
         XCTAssertEqual(restored.cachedModels(for: .openRouter).map(\.id), ["example/model"])
     }
 
@@ -43,9 +49,36 @@ final class SettingsTests: XCTestCase {
         XCTAssertFalse(englishEntries[0].displayName.isEmpty)
     }
 
+    func testProviderEnablementKeepsAnEnabledProviderSelected() {
+        let suiteName = "SettingsTests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            return XCTFail("Could not create test defaults")
+        }
+        defaults.removePersistentDomain(forName: suiteName)
+
+        let settings = AppSettings(defaults: defaults)
+        settings.setProviderEnabled(true, for: .openAI)
+        settings.setProviderEnabled(false, for: .bailian)
+        XCTAssertEqual(settings.selectedProviderID, .openAI)
+
+        settings.setProviderEnabled(false, for: .openAI)
+        settings.setProviderEnabled(true, for: .anthropic)
+        XCTAssertEqual(settings.selectedProviderID, .anthropic)
+    }
+
     func testGlobalShortcutRoundTripsThroughCodable() throws {
         let shortcut = GlobalShortcut.defaultShortcut
         let data = try JSONEncoder().encode(shortcut)
         XCTAssertEqual(try JSONDecoder().decode(GlobalShortcut.self, from: data), shortcut)
+    }
+
+    func testTrayIsEnabledByDefault() {
+        let suiteName = "SettingsTests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            return XCTFail("Could not create test defaults")
+        }
+        defaults.removePersistentDomain(forName: suiteName)
+
+        XCTAssertTrue(AppSettings(defaults: defaults).isTrayEnabled)
     }
 }

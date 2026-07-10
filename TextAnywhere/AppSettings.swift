@@ -10,10 +10,16 @@ import Observation
 @Observable
 final class AppSettings {
 
+    static let trayVisibilityDidChange = Notification.Name(
+        "AppSettings.trayVisibilityDidChange"
+    )
+
     private enum Key {
         static let selectedProvider = "selectedProvider"
+        static let enabledProviders = "enabledProviders"
         static let targetLanguage = "targetLanguage"
         static let shortcut = "globalShortcut"
+        static let trayEnabled = "trayEnabled"
 
         static func baseURL(_ providerID: ProviderIdentifier) -> String {
             "provider.\(providerID.rawValue).baseURL"
@@ -40,6 +46,15 @@ final class AppSettings {
         }
     }
 
+    private(set) var enabledProviderIDs: Set<ProviderIdentifier> {
+        didSet {
+            defaults.set(
+                enabledProviderIDs.map(\.rawValue).sorted(),
+                forKey: Key.enabledProviders
+            )
+        }
+    }
+
     var targetLanguageCode: String {
         didSet {
             defaults.set(targetLanguageCode, forKey: Key.targetLanguage)
@@ -54,11 +69,30 @@ final class AppSettings {
         }
     }
 
+    var isTrayEnabled: Bool {
+        didSet {
+            defaults.set(isTrayEnabled, forKey: Key.trayEnabled)
+            guard isTrayEnabled != oldValue else { return }
+            NotificationCenter.default.post(
+                name: Self.trayVisibilityDidChange,
+                object: self
+            )
+        }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
 
         let providerValue = defaults.string(forKey: Key.selectedProvider)
-        selectedProviderID = providerValue.map(ProviderIdentifier.init(rawValue:)) ?? .bailian
+        let initialProviderID = providerValue.map(ProviderIdentifier.init(rawValue:)) ?? .bailian
+        selectedProviderID = initialProviderID
+        if let enabledProviderValues = defaults.stringArray(forKey: Key.enabledProviders) {
+            enabledProviderIDs = Set(
+                enabledProviderValues.map(ProviderIdentifier.init(rawValue:))
+            )
+        } else {
+            enabledProviderIDs = [initialProviderID]
+        }
         targetLanguageCode = defaults.string(forKey: Key.targetLanguage) ?? TranslationLanguage.english.code
 
         if let shortcutData = defaults.data(forKey: Key.shortcut),
@@ -67,10 +101,15 @@ final class AppSettings {
         } else {
             shortcut = .defaultShortcut
         }
+        isTrayEnabled = defaults.object(forKey: Key.trayEnabled) as? Bool ?? true
     }
 
     var selectedProvider: Provider {
         Provider.provider(for: selectedProviderID)
+    }
+
+    var enabledProviders: [Provider] {
+        Provider.presets.filter { enabledProviderIDs.contains($0.id) }
     }
 
     var targetLanguage: TranslationLanguage {
@@ -101,6 +140,28 @@ final class AppSettings {
 
     func setThinkingEnabled(_ isEnabled: Bool, for providerID: ProviderIdentifier) {
         defaults.set(isEnabled, forKey: Key.thinkingEnabled(providerID))
+    }
+
+    func isProviderEnabled(_ providerID: ProviderIdentifier) -> Bool {
+        enabledProviderIDs.contains(providerID)
+    }
+
+    func setProviderEnabled(_ isEnabled: Bool, for providerID: ProviderIdentifier) {
+        if isEnabled {
+            let shouldSelectProvider = enabledProviderIDs.isEmpty
+                || !enabledProviderIDs.contains(selectedProviderID)
+            enabledProviderIDs.insert(providerID)
+            if shouldSelectProvider {
+                selectedProviderID = providerID
+            }
+            return
+        }
+
+        enabledProviderIDs.remove(providerID)
+        if selectedProviderID == providerID,
+           let fallbackProvider = enabledProviders.first {
+            selectedProviderID = fallbackProvider.id
+        }
     }
 
     func cachedModels(for providerID: ProviderIdentifier) -> [ModelDescriptor] {

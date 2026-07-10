@@ -48,25 +48,31 @@ struct GeneralSettingsView: View {
                 }
             }
 
-            LabeledContent("Accessibility") {
-                TimelineView(.periodic(from: .now, by: 1)) { _ in
-                    if controller.insertionService.isTrusted {
-                        Label("Granted", systemImage: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
-                    } else {
-                        Button("Grant Access") {
-                            controller.insertionService.requestPermission()
+            Toggle(
+                "Show in Menu Bar",
+                isOn: Binding(
+                    get: { controller.settings.isTrayEnabled },
+                    set: { controller.settings.isTrayEnabled = $0 }
+                )
+            )
+
+            Section {
+                LabeledContent("Accessibility") {
+                    TimelineView(.periodic(from: .now, by: 1)) { _ in
+                        if controller.insertionService.isTrusted {
+                            Label("Granted", systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        } else {
+                            Button("Grant Access") {
+                                controller.insertionService.requestPermission()
+                            }
                         }
                     }
                 }
+            } footer: {
+                Text("Accessibility access lets TextAnywhere insert a translation into the selected app. Without it, the translation is copied to the clipboard.")
             }
-
-            Text("Accessibility access lets TextAnywhere insert a translation into the selected app. Without it, the translation is copied to the clipboard.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
         }
-        .formStyle(.grouped)
-        .padding()
         .fontDesign(.rounded)
     }
 }
@@ -178,43 +184,82 @@ private struct ShortcutCaptureView: NSViewRepresentable {
     let onCapture: (GlobalShortcut) -> Void
     let onError: (String) -> Void
 
-    func makeNSView(context: Context) -> ShortcutCaptureNSView {
-        let view = ShortcutCaptureNSView()
-        configure(view)
-        return view
+    func makeCoordinator() -> Coordinator {
+        Coordinator()
     }
 
-    func updateNSView(_ nsView: ShortcutCaptureNSView, context: Context) {
-        configure(nsView)
-        guard isRecording else { return }
-        DispatchQueue.main.async {
-            nsView.window?.makeFirstResponder(nsView)
-        }
+    func makeNSView(context: Context) -> NSView {
+        NSView()
     }
 
-    private func configure(_ view: ShortcutCaptureNSView) {
-        view.onKeyDown = { event in
+    func updateNSView(_ nsView: NSView, context: Context) {
+        context.coordinator.update(
+            hostView: nsView,
+            isRecording: isRecording
+        ) { event in
             if event.keyCode == UInt16(kVK_Escape) {
                 isRecording = false
-                return
+                return true
             }
             do {
                 onCapture(try GlobalShortcut(event: event))
                 isRecording = false
+                return true
             } catch {
                 onError(error.localizedDescription)
+                return false
             }
         }
     }
-}
 
-private final class ShortcutCaptureNSView: NSView {
+    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
+        coordinator.stop()
+    }
 
-    var onKeyDown: ((NSEvent) -> Void)?
+    final class Coordinator {
 
-    override var acceptsFirstResponder: Bool { true }
+        private weak var hostView: NSView?
+        private var eventMonitor: Any?
+        private var onKeyDown: ((NSEvent) -> Bool)?
 
-    override func keyDown(with event: NSEvent) {
-        onKeyDown?(event)
+        func update(
+            hostView: NSView,
+            isRecording: Bool,
+            onKeyDown: @escaping (NSEvent) -> Bool
+        ) {
+            self.hostView = hostView
+            self.onKeyDown = onKeyDown
+
+            if isRecording {
+                start()
+            } else {
+                stop()
+            }
+        }
+
+        func stop() {
+            if let eventMonitor {
+                NSEvent.removeMonitor(eventMonitor)
+                self.eventMonitor = nil
+            }
+            onKeyDown = nil
+        }
+
+        private func start() {
+            guard eventMonitor == nil else { return }
+            eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
+                [weak self] event in
+                guard let self,
+                      event.window === hostView?.window,
+                      let onKeyDown else {
+                    return event
+                }
+
+                if onKeyDown(event) {
+                    stop()
+                }
+                return nil
+            }
+        }
     }
 }

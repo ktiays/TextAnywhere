@@ -9,21 +9,30 @@ import XCTest
 
 final class TranslationSessionTests: XCTestCase {
 
-    func testSuccessfulInsertionClearsDraftAndCallsSuccess() async throws {
+    func testSuccessfulInsertionCopiesTranslationBeforeInsertingAndCallsSuccess() async throws {
         let environment = makeEnvironment(adapterResult: .success("Bonjour"))
+        let insertionStarted = expectation(description: "Insertion started")
         let success = expectation(description: "Successful insertion")
-        environment.session.setActions(onSuccessfulInsertion: {
-            success.fulfill()
-        }, onDismiss: {})
+        environment.session.setActions(
+            onInsertionStarted: {
+                insertionStarted.fulfill()
+            },
+            onSuccessfulInsertion: {
+                success.fulfill()
+            },
+            onInsertionFailed: {},
+            onDismiss: {}
+        )
         environment.session.draft = "Hello"
         environment.session.selectTarget(Self.targetApplication)
 
         environment.session.submit()
-        await fulfillment(of: [success], timeout: 1)
+        await fulfillment(of: [insertionStarted, success], timeout: 1, enforceOrder: true)
 
         XCTAssertEqual(environment.insertionService.insertedText, "Bonjour")
+        XCTAssertEqual(environment.insertionService.pasteboardTextAtInsertion, "Bonjour")
         XCTAssertEqual(environment.session.draft, "")
-        XCTAssertNil(environment.pasteboard.text)
+        XCTAssertEqual(environment.pasteboard.text, "Bonjour")
     }
 
     func testInsertionFailureCopiesTranslationAndKeepsDraft() async throws {
@@ -31,18 +40,28 @@ final class TranslationSessionTests: XCTestCase {
             adapterResult: .success("Bonjour"),
             insertionError: TextInsertionError.unsupportedTextElement
         )
+        let insertionFailed = expectation(description: "Insertion failed")
+        environment.session.setActions(
+            onInsertionStarted: {},
+            onSuccessfulInsertion: {},
+            onInsertionFailed: {
+                insertionFailed.fulfill()
+            },
+            onDismiss: {}
+        )
         environment.session.draft = "Hello"
         environment.session.selectTarget(Self.targetApplication)
 
         environment.session.submit()
-        try await waitUntil { environment.pasteboard.text != nil }
+        await fulfillment(of: [insertionFailed], timeout: 1)
 
         XCTAssertEqual(environment.pasteboard.text, "Bonjour")
         XCTAssertEqual(environment.session.draft, "Hello")
         guard case .message(let message, let isError) = environment.session.state else {
             return XCTFail("Expected a fallback message")
         }
-        XCTAssertFalse(isError)
+        XCTAssertTrue(isError)
+        XCTAssertTrue(message.contains("does not expose a writable text selection"))
         XCTAssertTrue(message.contains("Paste"))
     }
 
@@ -100,8 +119,8 @@ final class TranslationSessionTests: XCTestCase {
         settings.setModelID("qwen-test", for: .bailian)
 
         let credentials = FakeCredentialStore(apiKey: "test-key")
-        let insertionService = FakeInsertionService(error: insertionError)
         let pasteboard = FakePasteboard()
+        let insertionService = FakeInsertionService(error: insertionError, pasteboard: pasteboard)
         let session = TranslationSession(
             settings: settings,
             credentials: credentials,
@@ -189,19 +208,23 @@ private final class FakeInsertionService: TextInsertionService {
 
     var isTrusted = true
     private(set) var insertedText: String?
+    private(set) var pasteboardTextAtInsertion: String?
     let error: Error?
+    let pasteboard: FakePasteboard
 
-    init(error: Error?) {
+    init(error: Error?, pasteboard: FakePasteboard) {
         self.error = error
+        self.pasteboard = pasteboard
     }
 
     func requestPermission() {}
 
     func captureTarget(in application: TargetApplication) -> CapturedTextTarget {
-        CapturedTextTarget(application: application, focusedElement: nil)
+        CapturedTextTarget(application: application)
     }
 
     func insert(_ text: String, into target: CapturedTextTarget) async throws {
+        pasteboardTextAtInsertion = pasteboard.text
         if let error { throw error }
         insertedText = text
     }

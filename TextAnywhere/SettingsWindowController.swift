@@ -9,21 +9,23 @@ import SwiftUI
 @MainActor
 final class SettingsWindowController: NSWindowController, NSWindowDelegate {
 
-    private static let contentSize = NSSize(width: 560, height: 420)
+    private static let defaultContentSize = NSSize(width: 720, height: 640)
+    private static let minimumContentSize = NSSize(width: 720, height: 400)
     private static let frameAutosaveName = "TextAnywhereSettingsWindow"
 
     init(controller: AppController) {
         let window = NSWindow(
-            contentRect: NSRect(origin: .zero, size: Self.contentSize),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            contentRect: NSRect(origin: .zero, size: Self.defaultContentSize),
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.title = "TextAnywhere Settings"
-        window.contentMinSize = Self.contentSize
-        window.contentViewController = NSHostingController(
-            rootView: SettingsView(controller: controller)
-        )
+        window.titleVisibility = .hidden
+        window.collectionBehavior.insert(.fullScreenNone)
+        window.collectionBehavior.remove(.fullScreenPrimary)
+        window.contentMinSize = Self.minimumContentSize
+        window.contentView = NSHostingView(rootView: SettingsView(controller: controller))
         window.isReleasedWhenClosed = false
 
         let didRestoreFrame = window.setFrameUsingName(Self.frameAutosaveName)

@@ -54,8 +54,14 @@ final class AppController {
         panelController = FloatingPanelController(session: session)
 
         session.setActions(
+            onInsertionStarted: { [weak panelController] in
+                panelController?.prepareForInsertion()
+            },
             onSuccessfulInsertion: { [weak panelController] in
                 panelController?.hide()
+            },
+            onInsertionFailed: { [weak panelController] in
+                panelController?.restoreAfterInsertionFailure()
             },
             onDismiss: { [weak panelController] in
                 panelController?.hide()
@@ -81,6 +87,10 @@ final class AppController {
 
     func showEditor() {
         panelController.show()
+    }
+
+    func showEditorWithoutTakingFocus() {
+        panelController.showWithoutTakingFocus()
     }
 
     func updateShortcut(_ shortcut: GlobalShortcut) throws {

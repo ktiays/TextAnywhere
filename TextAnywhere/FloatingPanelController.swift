@@ -33,7 +33,7 @@ final class FloatingPanelController: NSObject, NSWindowDelegate {
         panel.level = .floating
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
-        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
+        panel.collectionBehavior = [.moveToActiveSpace, .fullScreenAuxiliary, .transient]
         panel.minSize = NSSize(width: 420, height: 480)
         panel.contentViewController = NSHostingController(rootView: ContentView(session: session))
         panel.delegate = self
@@ -50,9 +50,19 @@ final class FloatingPanelController: NSObject, NSWindowDelegate {
     }
 
     func show() {
+        show(takingFocus: true)
+    }
+
+    func showWithoutTakingFocus() {
+        show(takingFocus: false)
+    }
+
+    private func show(takingFocus: Bool) {
         session.prepareForPresentation()
         positionPanel()
         panel.orderFrontRegardless()
+        guard takingFocus else { return }
+
         panel.makeKey()
         DispatchQueue.main.async { [weak self] in
             self?.session.requestEditorFocus()
@@ -62,6 +72,19 @@ final class FloatingPanelController: NSObject, NSWindowDelegate {
     func hide() {
         session.cancel()
         panel.orderOut(nil)
+    }
+
+    func prepareForInsertion() {
+        panel.orderOut(nil)
+    }
+
+    func restoreAfterInsertionFailure() {
+        positionPanel()
+        panel.orderFrontRegardless()
+        panel.makeKey()
+        DispatchQueue.main.async { [weak self] in
+            self?.session.requestEditorFocus()
+        }
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {

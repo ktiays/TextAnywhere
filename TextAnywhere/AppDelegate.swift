@@ -19,8 +19,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         assert(didSetActivationPolicy, "Unable to set accessory activation policy at launch.")
 
         configureMainMenu()
-        configureStatusItem()
+        updateStatusItemVisibility()
+        NotificationCenter.default.addObserver(
+            self,
+            selector: #selector(trayVisibilityDidChange),
+            name: AppSettings.trayVisibilityDidChange,
+            object: controller.settings
+        )
         controller.start()
+        controller.showEditorWithoutTakingFocus()
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -31,7 +38,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         _ sender: NSApplication,
         hasVisibleWindows flag: Bool
     ) -> Bool {
-        settingsWindowController.showSettings()
+        controller.showEditorWithoutTakingFocus()
         return true
     }
 
@@ -44,6 +51,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func configureStatusItem() {
+        guard statusItem == nil else { return }
+
         let statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         if let image = NSImage(
             systemSymbolName: "character.cursor.ibeam",
@@ -74,6 +83,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         statusItem.menu = menu
         self.statusItem = statusItem
+    }
+
+    private func updateStatusItemVisibility() {
+        if controller.settings.isTrayEnabled {
+            configureStatusItem()
+        } else if let statusItem {
+            NSStatusBar.system.removeStatusItem(statusItem)
+            self.statusItem = nil
+        }
+    }
+
+    @objc private func trayVisibilityDidChange(_ notification: Notification) {
+        updateStatusItemVisibility()
     }
 
     private func configureMainMenu() {
@@ -183,6 +205,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let menuItem = NSMenuItem()
         let menu = NSMenu(title: "Window")
 
+        menu.addItem(
+            responderItem(
+                title: "Close Window",
+                action: #selector(NSWindow.performClose(_:)),
+                keyEquivalent: "w"
+            )
+        )
+        menu.addItem(.separator())
         menu.addItem(
             responderItem(
                 title: "Minimize",

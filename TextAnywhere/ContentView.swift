@@ -12,6 +12,7 @@ struct ContentView: View {
 
     @FocusState private var editorFocused: Bool
     @State private var editorHasMarkedText = false
+    @State private var isTargetApplicationMenuPresented = false
 
     var body: some View {
         VStack(spacing: 12) {
@@ -46,10 +47,7 @@ struct ContentView: View {
             }
 
             HStack {
-                Text(providerDescription)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                providerMenu
 
                 Spacer()
 
@@ -98,19 +96,46 @@ struct ContentView: View {
             : "\(session.selectedProvider.name) · \(modelID)"
     }
 
-    private var targetApplicationMenu: some View {
+    private var providerMenu: some View {
         Menu {
-            if session.runningApplications.isEmpty {
-                Text("No Applications")
+            if session.enabledProviders.isEmpty {
+                Text("No Providers Enabled")
             } else {
-                ForEach(session.runningApplications) { application in
+                ForEach(session.enabledProviders) { provider in
                     Button {
-                        session.selectTarget(application)
+                        session.selectProvider(provider)
                     } label: {
-                        Text(application.localizedName)
+                        HStack {
+                            Text(providerMenuLabel(for: provider))
+                            if session.selectedProvider == provider {
+                                Image(systemName: "checkmark")
+                            }
+                        }
                     }
                 }
             }
+        } label: {
+            HStack(spacing: 4) {
+                Text(session.enabledProviders.isEmpty ? "No Provider Enabled" : providerDescription)
+                    .lineLimit(1)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2)
+            }
+            .font(.caption)
+            .foregroundStyle(session.enabledProviders.isEmpty ? Color.red : Color.secondary)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+    }
+
+    private func providerMenuLabel(for provider: Provider) -> String {
+        let modelID = session.modelID(for: provider)
+        return modelID.isEmpty ? provider.name : "\(provider.name) · \(modelID)"
+    }
+
+    private var targetApplicationMenu: some View {
+        Button {
+            isTargetApplicationMenuPresented.toggle()
         } label: {
             HStack(spacing: 6) {
                 if let icon = session.selectedTarget?.icon {
@@ -127,7 +152,103 @@ struct ContentView: View {
                     .foregroundStyle(.secondary)
             }
         }
-        .menuStyle(.borderlessButton)
+        .buttonStyle(.plain)
+        .popoverPanel(isPresented: $isTargetApplicationMenuPresented) {
+            TargetApplicationMenuContent(
+                applications: session.runningApplications,
+                selectedApplication: session.selectedTarget
+            ) { application in
+                session.selectTarget(application)
+                isTargetApplicationMenuPresented = false
+            }
+            .frame(width: 320, height: 280)
+        }
         .fixedSize()
+    }
+}
+
+private struct TargetApplicationMenuContent: View {
+
+    let applications: [TargetApplication]
+    let selectedApplication: TargetApplication?
+    let onSelect: (TargetApplication) -> Void
+
+    @FocusState private var searchFieldFocused: Bool
+    @State private var searchText = ""
+    @State private var highlightedApplicationID: pid_t?
+
+    private var filteredApplications: [TargetApplication] {
+        let query = searchText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return applications }
+        return applications.filter { application in
+            application.localizedName.localizedCaseInsensitiveContains(query)
+                || application.bundleIdentifier?.localizedCaseInsensitiveContains(query) == true
+        }
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            TextField("Search Applications", text: $searchText)
+                .textFieldStyle(.plain)
+                .focused($searchFieldFocused)
+                .padding()
+
+            Divider()
+
+            if filteredApplications.isEmpty {
+                ContentUnavailableView.search(text: searchText)
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(filteredApplications) { application in
+                            applicationRow(application)
+                        }
+                    }
+                    .padding(8)
+                }
+            }
+        }
+        .fontDesign(.rounded)
+        .onAppear {
+            searchFieldFocused = true
+        }
+    }
+
+    private func applicationRow(_ application: TargetApplication) -> some View {
+        HStack(spacing: 8) {
+            if let icon = application.icon {
+                Image(nsImage: icon)
+                    .resizable()
+                    .frame(width: 18, height: 18)
+            } else {
+                Image(systemName: "macwindow")
+                    .frame(width: 18, height: 18)
+            }
+
+            Text(application.localizedName)
+                .lineLimit(1)
+
+            Spacer()
+
+            if selectedApplication == application {
+                Image(systemName: "checkmark")
+                    .foregroundStyle(.tint)
+            }
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
+        .background {
+            if highlightedApplicationID == application.id {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(.tint.opacity(0.1))
+            }
+        }
+        .contentShape(Rectangle())
+        .onHover { isHovered in
+            highlightedApplicationID = isHovered ? application.id : nil
+        }
+        .onTapGesture {
+            onSelect(application)
+        }
     }
 }

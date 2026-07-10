@@ -11,7 +11,6 @@ import CoreGraphics
 struct CapturedTextTarget {
 
     let application: TargetApplication
-    let focusedElement: AXUIElement?
 }
 
 protocol TextInsertionService {
@@ -36,10 +35,7 @@ struct AccessibilityInsertionService: TextInsertionService {
     }
 
     func captureTarget(in application: TargetApplication) -> CapturedTextTarget {
-        CapturedTextTarget(
-            application: application,
-            focusedElement: focusedElement(for: application.processIdentifier)
-        )
+        CapturedTextTarget(application: application)
     }
 
     func insert(_ text: String, into target: CapturedTextTarget) async throws {
@@ -47,52 +43,10 @@ struct AccessibilityInsertionService: TextInsertionService {
             throw TextInsertionError.permissionRequired
         }
 
-        if let focusedElement = target.focusedElement,
-           tryInsert(text, into: focusedElement) {
-            return
-        }
-
-        if let currentElement = focusedElement(for: target.application.processIdentifier),
-           tryInsert(text, into: currentElement) {
-            return
-        }
-
-        try await pasteUsingKeyboard(text, into: target.application)
+        try await pasteUsingClipboard(text, into: target.application)
     }
 
-    private func focusedElement(for processIdentifier: pid_t) -> AXUIElement? {
-        let applicationElement = AXUIElementCreateApplication(processIdentifier)
-        AXUIElementSetMessagingTimeout(applicationElement, 1)
-
-        var value: CFTypeRef?
-        let result = AXUIElementCopyAttributeValue(
-            applicationElement,
-            kAXFocusedUIElementAttribute as CFString,
-            &value
-        )
-        guard result == .success, let value else { return nil }
-        guard CFGetTypeID(value) == AXUIElementGetTypeID() else { return nil }
-        return unsafeBitCast(value, to: AXUIElement.self)
-    }
-
-    private func tryInsert(_ text: String, into element: AXUIElement) -> Bool {
-        var settable = DarwinBoolean(false)
-        let settableResult = AXUIElementIsAttributeSettable(
-            element,
-            kAXSelectedTextAttribute as CFString,
-            &settable
-        )
-        guard settableResult == .success, settable.boolValue else { return false }
-
-        let result = AXUIElementSetAttributeValue(
-            element,
-            kAXSelectedTextAttribute as CFString,
-            text as CFString
-        )
-        return result == .success
-    }
-
-    private func pasteUsingKeyboard(
+    private func pasteUsingClipboard(
         _ text: String,
         into application: TargetApplication
     ) async throws {
@@ -104,19 +58,17 @@ struct AccessibilityInsertionService: TextInsertionService {
 
         SystemPasteboardWriter().copy(text)
 
-        if !runningApplication.isActive {
-            guard runningApplication.activate(options: [.activateAllWindows]) else {
-                throw TextInsertionError.couldNotActivateApplication
-            }
-
-            for _ in 0..<10 where !runningApplication.isActive {
-                try await Task.sleep(for: .milliseconds(50))
-            }
-            guard runningApplication.isActive else {
-                throw TextInsertionError.couldNotActivateApplication
-            }
+        guard runningApplication.activate(options: [.activateAllWindows]) else {
+            throw TextInsertionError.couldNotActivateApplication
         }
 
+        for _ in 0..<10 where !runningApplication.isActive {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        guard runningApplication.isActive else {
+            throw TextInsertionError.couldNotActivateApplication
+        }
+        try await Task.sleep(for: .milliseconds(50))
         try Task.checkCancellation()
 
         guard let eventSource = CGEventSource(stateID: .combinedSessionState),
@@ -133,11 +85,18 @@ struct AccessibilityInsertionService: TextInsertionService {
             throw TextInsertionError.couldNotCreatePasteEvent
         }
 
-        keyDown.flags = .maskCommand
-        keyUp.flags = .maskCommand
-        keyDown.postToPid(application.processIdentifier)
-        keyUp.postToPid(application.processIdentifier)
-        try await Task.sleep(for: .milliseconds(50))
+        eventSource.setLocalEventsFilterDuringSuppressionState(
+            [.permitLocalMouseEvents, .permitSystemDefinedEvents],
+            state: .eventSuppressionStateSuppressionInterval
+        )
+
+        // Include device-specific state so Command is handled like a physical modifier key.
+        let commandFlags = CGEventFlags(rawValue: CGEventFlags.maskCommand.rawValue | 0x000008)
+        keyDown.flags = commandFlags
+        keyUp.flags = commandFlags
+        keyDown.post(tap: .cgSessionEventTap)
+        keyUp.post(tap: .cgSessionEventTap)
+        try await Task.sleep(for: .milliseconds(100))
     }
 }
 

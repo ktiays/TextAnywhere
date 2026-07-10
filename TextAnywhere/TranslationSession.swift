@@ -27,7 +27,9 @@ final class TranslationSession {
     private let pasteboard: any PasteboardWriting
     private let applicationTracker: ApplicationTracker
     private let adapterFactory: (ProviderIdentifier) -> any TranslationProviderAdapter
+    private var onInsertionStarted: (@MainActor () -> Void)?
     private var onSuccessfulInsertion: (@MainActor () -> Void)?
+    private var onInsertionFailed: (@MainActor () -> Void)?
     private var onDismiss: (@MainActor () -> Void)?
 
     private var capturedTarget: CapturedTextTarget?
@@ -61,8 +63,16 @@ final class TranslationSession {
         settings.selectedProvider
     }
 
+    var enabledProviders: [Provider] {
+        settings.enabledProviders
+    }
+
     var selectedModelID: String {
         settings.modelID(for: settings.selectedProviderID)
+    }
+
+    func modelID(for provider: Provider) -> String {
+        settings.modelID(for: provider.id)
     }
 
     var isTranslating: Bool {
@@ -70,7 +80,9 @@ final class TranslationSession {
     }
 
     var canSubmit: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isTranslating
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && settings.isProviderEnabled(settings.selectedProviderID)
+            && !isTranslating
     }
 
     var hasAccessibilityPermission: Bool {
@@ -88,10 +100,14 @@ final class TranslationSession {
     }
 
     func setActions(
+        onInsertionStarted: @escaping @MainActor () -> Void,
         onSuccessfulInsertion: @escaping @MainActor () -> Void,
+        onInsertionFailed: @escaping @MainActor () -> Void,
         onDismiss: @escaping @MainActor () -> Void
     ) {
+        self.onInsertionStarted = onInsertionStarted
         self.onSuccessfulInsertion = onSuccessfulInsertion
+        self.onInsertionFailed = onInsertionFailed
         self.onDismiss = onDismiss
     }
 
@@ -108,11 +124,21 @@ final class TranslationSession {
         insertionService.requestPermission()
     }
 
+    func selectProvider(_ provider: Provider) {
+        guard settings.isProviderEnabled(provider.id) else { return }
+        settings.selectedProviderID = provider.id
+    }
+
     func submit() {
         guard translationTask == nil else { return }
 
         do {
             let providerID = settings.selectedProviderID
+            guard settings.isProviderEnabled(providerID) else {
+                throw ProviderError.invalidConfiguration(
+                    "Enable a model provider in Settings before translating."
+                )
+            }
             let provider = Provider.provider(for: providerID)
             let configuration = try providerConfiguration(for: provider)
             let sourceText = draft
@@ -141,6 +167,8 @@ final class TranslationSession {
                         configuration: configuration
                     )
                     try Task.checkCancellation()
+                    pasteboard.copy(translatedText)
+                    onInsertionStarted?()
 
                     do {
                         try await insertionService.insert(translatedText, into: target)
@@ -149,14 +177,14 @@ final class TranslationSession {
                         translationTask = nil
                         onSuccessfulInsertion?()
                     } catch {
-                        pasteboard.copy(translatedText)
                         state = .message(
                             "Automatic insertion failed: \(error.localizedDescription) "
                                 + "The translation was copied. Paste it into "
                                 + "\(target.application.localizedName) manually.",
-                            isError: false
+                            isError: true
                         )
                         translationTask = nil
+                        onInsertionFailed?()
                     }
                 } catch is CancellationError {
                     state = .idle
