@@ -21,6 +21,6 @@ struct SettingsView: View {
                     Label("Providers", systemImage: "laser.burst")
                 }
         }
-        .frame(width: 560, height: 420)
+        .frame(minWidth: 560, minHeight: 420)
     }
 }
