@@ -5,14 +5,15 @@
 
 import SwiftUI
 
-struct Provider: Identifiable, Hashable, Equatable {
-    
-    let id = UUID()
+struct Provider: Identifiable, Hashable, Equatable, Sendable {
+
+    let id: ProviderIdentifier
     let name: String
     let iconAssetName: String?
     let systemImageName: String?
 
-    init(name: String, iconAssetName: String? = nil, systemImageName: String? = nil) {
+    init(id: ProviderIdentifier, name: String, iconAssetName: String? = nil, systemImageName: String? = nil) {
+        self.id = id
         self.name = name
         self.iconAssetName = iconAssetName
         self.systemImageName = systemImageName
@@ -35,11 +36,80 @@ struct Provider: Identifiable, Hashable, Equatable {
         }
     }
 
+    static let anthropic: Self = .init(id: .anthropic, name: "Anthropic", iconAssetName: "anthropic")
+
+    static let openAI: Self = .init(id: .openAI, name: "OpenAI", iconAssetName: "openai")
+
+    static let openRouter: Self = .init(id: .openRouter, name: "OpenRouter", iconAssetName: "openrouter")
+
+    static let xAI: Self = .init(id: .xAI, name: "xAI", iconAssetName: "xai")
+
+    static let bailian: Self = .init(id: .bailian, name: "Bailian", iconAssetName: "bailian")
+
+    static let ollama: Self = .init(id: .ollama, name: "Ollama", iconAssetName: "ollama")
+
     static let presets: [Provider] = [
-        Provider(name: "Anthropic", iconAssetName: "anthropic"),
-        Provider(name: "OpenAI", iconAssetName: "openai"),
-        Provider(name: "xAI", iconAssetName: "xai"),
-        Provider(name: "OpenRouter", iconAssetName: "openrouter"),
-        Provider(name: "百炼大模型", iconAssetName: "bailian"),
+        .anthropic,
+        .openAI,
+        .openRouter,
+        .xAI,
+        .bailian,
+        .ollama,
     ]
+
+    static func provider(for identifier: ProviderIdentifier) -> Provider {
+        presets.first { $0.id == identifier } ?? .bailian
+    }
+
+    var requiresAPIKey: Bool {
+        id != .ollama
+    }
+
+    var defaultBaseURL: String {
+        switch id {
+        case .anthropic:
+            "https://api.anthropic.com/v1"
+        case .openAI:
+            "https://api.openai.com/v1"
+        case .openRouter:
+            "https://openrouter.ai/api/v1"
+        case .xAI:
+            "https://api.x.ai/v1"
+        case .bailian:
+            "https://dashscope.aliyuncs.com/compatible-mode/v1"
+        case .ollama:
+            "http://localhost:11434"
+        default:
+            fatalError("Unspported provider: \(id)")
+        }
+    }
+
+    var defaultModelID: String {
+        id == .bailian ? "qwen-plus" : ""
+    }
+}
+
+struct ProviderIdentifier: RawRepresentable, ExpressibleByStringLiteral, Hashable, Codable, Sendable {
+
+    let rawValue: String
+
+    init(rawValue: String) {
+        self.rawValue = rawValue
+    }
+
+    init(stringLiteral value: StringLiteralType) {
+        self.init(rawValue: value)
+    }
+
+    static let anthropic: Self = "Anthropic"
+
+    static let openAI: Self = "OpenAI"
+
+    static let xAI: Self = "xAI"
+
+    static let openRouter: Self = "OpenRouter"
+
+    static let bailian: Self = "Bailian"
+
+    static let ollama: Self = "Ollama"
 }

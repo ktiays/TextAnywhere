@@ -11,10 +11,12 @@ final class PopoverPanelPresenter: NSObject, NSPopoverDelegate {
     private var popover: NSPopover?
     private var fakePositioningView: NSView?
     private var isClosing = false
+    private var isPresentedBinding: Binding<Bool>?
 
-    func present<Content>(@ViewBuilder content: () -> Content, relativeTo positioningView: NSView) where Content: View {
+    func present<Content>(@ViewBuilder content: () -> Content, relativeTo positioningView: NSView, isPresented: Binding<Bool>? = nil) where Content: View {
         dismiss()
         isClosing = false
+        isPresentedBinding = isPresented
 
         let screenSize = positioningView.window?.screen?.visibleFrame.size ?? .zero
 
@@ -59,8 +61,10 @@ final class PopoverPanelPresenter: NSObject, NSPopoverDelegate {
     func popoverDidClose(_ notification: Notification) {
         fakePositioningView?.removeFromSuperview()
         fakePositioningView = nil
-        popover = nil
+        self.popover = nil
         isClosing = false
+        isPresentedBinding?.wrappedValue = false
+        isPresentedBinding = nil
     }
 
     private func closeWithAnimation(_ popover: NSPopover) {
@@ -96,9 +100,41 @@ private struct PopoverAnchorReader: NSViewRepresentable {
     func updateNSView(_ nsView: NSView, context: Context) {}
 }
 
+private struct PopoverPanelModifier<PopoverContent: View>: ViewModifier {
+
+    @Binding var isPresented: Bool
+    @ViewBuilder let popoverContent: () -> PopoverContent
+
+    @State private var presenter = PopoverPanelPresenter()
+    @State private var anchorView: NSView?
+
+    func body(content: Content) -> some View {
+        content
+            .background(PopoverAnchorReader(view: $anchorView))
+            .onChange(of: isPresented) {
+                updatePresentation()
+            }
+            .onChange(of: anchorView) {
+                updatePresentation()
+            }
+    }
+
+    private func updatePresentation() {
+        if isPresented, let anchorView {
+            presenter.present(content: popoverContent, relativeTo: anchorView, isPresented: $isPresented)
+        } else if !isPresented {
+            presenter.dismiss()
+        }
+    }
+}
+
 extension View {
 
     func popoverAnchor(_ view: Binding<NSView?>) -> some View {
         self.background(PopoverAnchorReader(view: view))
+    }
+
+    func popoverPanel<Content>(isPresented: Binding<Bool>, @ViewBuilder content: @escaping () -> Content) -> some View where Content: View {
+        modifier(PopoverPanelModifier(isPresented: isPresented, popoverContent: content))
     }
 }

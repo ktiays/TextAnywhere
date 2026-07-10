@@ -6,18 +6,21 @@
 import SwiftUI
 
 struct SettingsView: View {
-    
+
+    let controller: AppController
+
     var body: some View {
         TabView {
-            ProvidersPage()
+            GeneralSettingsView(controller: controller)
+                .tabItem {
+                    Label("General", systemImage: "gearshape")
+                }
+
+            ProvidersPage(controller: controller)
                 .tabItem {
                     Label("Providers", systemImage: "laser.burst")
                 }
         }
-        .frame(width: 480, height: 320)
+        .frame(width: 560, height: 420)
     }
-}
-
-#Preview {
-    SettingsView()
 }

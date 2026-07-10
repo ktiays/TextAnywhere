@@ -3,17 +3,45 @@
 //  Copyright (c) 2026 ktiays. All rights reserved.
 //
 
+import AppKit
 import SwiftUI
+
+@MainActor
+final class AppDelegate: NSObject, NSApplicationDelegate {
+
+    let controller = AppController()
+
+    func applicationDidFinishLaunching(_ notification: Notification) {
+        NSApp.setActivationPolicy(.accessory)
+        controller.start()
+    }
+}
 
 @main
 struct TextAnywhereApp: App {
+
+    @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
+
     var body: some Scene {
-        WindowGroup {
-            ContentView()
+        MenuBarExtra("TextAnywhere", systemImage: "character.cursor.ibeam") {
+            Button("Open Editor") {
+                appDelegate.controller.showEditor()
+            }
+
+            SettingsLink {
+                Text("Settings…")
+            }
+
+            Divider()
+
+            Button("Quit") {
+                NSApp.terminate(nil)
+            }
         }
+        .menuBarExtraStyle(.menu)
 
         Settings {
-            SettingsView()
+            SettingsView(controller: appDelegate.controller)
         }
     }
 }
