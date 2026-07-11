@@ -140,22 +140,11 @@ final class FloatingPanelController: NSObject, NSWindowDelegate {
         }
 
         let panelSize = panel.frame.size
-        let pointerSpacing: CGFloat = 12
-        let preferredX = pointerLocation.x + pointerSpacing
-        let preferredY = pointerLocation.y - panelSize.height - pointerSpacing
-        let fallbackX = pointerLocation.x - panelSize.width - pointerSpacing
-        let fallbackY = pointerLocation.y + pointerSpacing
-        let proposedX = preferredX + panelSize.width <= visibleFrame.maxX
-            ? preferredX
-            : fallbackX
-        let proposedY = preferredY >= visibleFrame.minY
-            ? preferredY
-            : fallbackY
         let maximumX = max(visibleFrame.minX, visibleFrame.maxX - panelSize.width)
         let maximumY = max(visibleFrame.minY, visibleFrame.maxY - panelSize.height)
         let origin = NSPoint(
-            x: min(max(proposedX, visibleFrame.minX), maximumX),
-            y: min(max(proposedY, visibleFrame.minY), maximumY)
+            x: min(max(pointerLocation.x - panelSize.width / 2, visibleFrame.minX), maximumX),
+            y: min(max(pointerLocation.y - panelSize.height / 2, visibleFrame.minY), maximumY)
         )
         panel.setFrameOrigin(origin)
     }
