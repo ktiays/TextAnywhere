@@ -52,11 +52,16 @@ struct ContentView: View {
                     ProgressView()
                         .controlSize(.small)
                 }
-                Button("Send") {
-                    session.submit()
+                if session.isTranslationButtonVisible {
+                    Button("Translate") {
+                        session.translate()
+                    }
+                    .disabled(!session.canTranslate)
                 }
-                .keyboardShortcut(.return, modifiers: .command)
-                .disabled(!session.canSubmit)
+                Button("Paste") {
+                    session.performPrimaryAction()
+                }
+                .disabled(!session.canPerformPrimaryAction)
             }
         }
         .padding(16)
@@ -68,6 +73,12 @@ struct ContentView: View {
         }
         .onChange(of: session.focusRequestID) {
             editorFocused = true
+        }
+        .background {
+            CommandEnterMonitor(isEnabled: session.canPerformCommandEnterAction) {
+                session.performCommandEnterAction()
+            }
+            .allowsHitTesting(false)
         }
         .task {
             for await notification in NotificationCenter.default.notifications(named: NSTextView.didChangeSelectionNotification) {

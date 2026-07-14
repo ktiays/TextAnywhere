@@ -26,7 +26,7 @@ final class TranslationSessionTests: XCTestCase {
         environment.session.draft = "Hello"
         environment.session.selectTarget(Self.targetApplication)
 
-        environment.session.submit()
+        environment.session.translateAndPaste()
         await fulfillment(of: [insertionStarted, success], timeout: 1, enforceOrder: true)
 
         XCTAssertEqual(environment.insertionService.insertedText, "Bonjour")
@@ -52,7 +52,7 @@ final class TranslationSessionTests: XCTestCase {
         environment.session.draft = "Hello"
         environment.session.selectTarget(Self.targetApplication)
 
-        environment.session.submit()
+        environment.session.translateAndPaste()
         await fulfillment(of: [insertionFailed], timeout: 1)
 
         XCTAssertEqual(environment.pasteboard.text, "Bonjour")
@@ -72,7 +72,7 @@ final class TranslationSessionTests: XCTestCase {
         environment.session.draft = "Hello"
         environment.session.selectTarget(Self.targetApplication)
 
-        environment.session.submit()
+        environment.session.translateAndPaste()
         try await waitUntil {
             if case .message = environment.session.state { return true }
             return false
@@ -88,13 +88,64 @@ final class TranslationSessionTests: XCTestCase {
         let environment = makeEnvironment(adapter: adapter)
         environment.session.draft = "Hello"
 
-        environment.session.submit()
+        environment.session.translateAndPaste()
 
         XCTAssertEqual(adapter.translationCallCount, 0)
         guard case .message(_, let isError) = environment.session.state else {
             return XCTFail("Expected a validation message")
         }
         XCTAssertTrue(isError)
+    }
+
+    func testConfiguredPrimaryActionPastesDraftWithoutCallingProvider() async {
+        let adapter = FakeAdapter(result: .success("Bonjour"))
+        let environment = makeEnvironment(adapter: adapter)
+        environment.settings.primaryButtonAction = .paste
+        let success = expectation(description: "Successful insertion")
+        environment.session.setActions(
+            onInsertionStarted: {},
+            onSuccessfulInsertion: {
+                success.fulfill()
+            },
+            onInsertionFailed: {},
+            onDismiss: {}
+        )
+        environment.session.draft = "Hello"
+        environment.session.selectTarget(Self.targetApplication)
+
+        environment.session.performPrimaryAction()
+        await fulfillment(of: [success], timeout: 1)
+
+        XCTAssertEqual(adapter.translationCallCount, 0)
+        XCTAssertEqual(environment.insertionService.insertedText, "Hello")
+        XCTAssertEqual(environment.insertionService.pasteboardTextAtInsertion, "Hello")
+        XCTAssertEqual(environment.pasteboard.text, "Hello")
+        XCTAssertEqual(environment.session.draft, "")
+    }
+
+    func testConfiguredCommandEnterTranslatesInPlaceWithoutInsertingOrCopying() async throws {
+        let environment = makeEnvironment(adapterResult: .success("Bonjour"))
+        environment.settings.commandEnterAction = .translate
+        environment.session.draft = "Hello"
+
+        environment.session.performCommandEnterAction()
+        try await waitUntil {
+            environment.session.draft == "Bonjour"
+        }
+
+        XCTAssertNil(environment.insertionService.insertedText)
+        XCTAssertNil(environment.pasteboard.text)
+        XCTAssertEqual(environment.session.state, .idle)
+    }
+
+    func testTranslationActionsAreUnavailableWithoutAnEnabledProvider() {
+        let environment = makeEnvironment(adapterResult: .success("Bonjour"))
+        environment.settings.setProviderEnabled(false, for: .bailian)
+        environment.session.draft = "Hello"
+
+        XCTAssertFalse(environment.session.hasAvailableProvider)
+        XCTAssertFalse(environment.session.canTranslate)
+        XCTAssertTrue(environment.session.canPaste)
     }
 
     private func makeEnvironment(
@@ -131,6 +182,7 @@ final class TranslationSessionTests: XCTestCase {
         )
 
         return TestEnvironment(
+            settings: settings,
             session: session,
             insertionService: insertionService,
             pasteboard: pasteboard
@@ -160,6 +212,7 @@ final class TranslationSessionTests: XCTestCase {
 }
 
 private struct TestEnvironment {
+    let settings: AppSettings
     let session: TranslationSession
     let insertionService: FakeInsertionService
     let pasteboard: FakePasteboard

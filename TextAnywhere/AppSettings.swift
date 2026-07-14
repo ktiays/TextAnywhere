@@ -20,6 +20,9 @@ final class AppSettings {
         static let targetLanguage = "targetLanguage"
         static let shortcut = "globalShortcut"
         static let trayEnabled = "trayEnabled"
+        static let translationButtonVisible = "translationButtonVisible"
+        static let primaryButtonAction = "primaryButtonAction"
+        static let commandEnterAction = "commandEnterAction"
 
         static func baseURL(_ providerID: ProviderIdentifier) -> String {
             "provider.\(providerID.rawValue).baseURL"
@@ -80,6 +83,24 @@ final class AppSettings {
         }
     }
 
+    var isTranslationButtonVisible: Bool {
+        didSet {
+            defaults.set(isTranslationButtonVisible, forKey: Key.translationButtonVisible)
+        }
+    }
+
+    var primaryButtonAction: EditorAction {
+        didSet {
+            defaults.set(primaryButtonAction.rawValue, forKey: Key.primaryButtonAction)
+        }
+    }
+
+    var commandEnterAction: EditorAction {
+        didSet {
+            defaults.set(commandEnterAction.rawValue, forKey: Key.commandEnterAction)
+        }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
 
@@ -102,6 +123,13 @@ final class AppSettings {
             shortcut = .defaultShortcut
         }
         isTrayEnabled = defaults.object(forKey: Key.trayEnabled) as? Bool ?? true
+        isTranslationButtonVisible = defaults.object(forKey: Key.translationButtonVisible) as? Bool ?? true
+        primaryButtonAction = defaults.string(forKey: Key.primaryButtonAction)
+            .flatMap(EditorAction.init(rawValue:))
+            ?? .translateAndPaste
+        commandEnterAction = defaults.string(forKey: Key.commandEnterAction)
+            .flatMap(EditorAction.init(rawValue:))
+            ?? .translateAndPaste
     }
 
     var selectedProvider: Provider {

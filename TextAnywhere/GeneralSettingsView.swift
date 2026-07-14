@@ -42,12 +42,13 @@ struct GeneralSettingsView: View {
                 }
             }
 
-            LabeledContent("Global Shortcut") {
+            HStack {
+                Text("Global Shortcut")
+                Spacer()
                 ShortcutRecorderView(shortcut: controller.settings.shortcut) { shortcut in
                     try controller.updateShortcut(shortcut)
                 }
             }
-
             Toggle(
                 "Show in Menu Bar",
                 isOn: Binding(
@@ -71,6 +72,53 @@ struct GeneralSettingsView: View {
                 }
             } footer: {
                 Text("Accessibility access lets TextAnywhere insert a translation into the selected app. Without it, the translation is copied to the clipboard.")
+            }
+            
+            Section("Editor") {
+                Toggle(
+                    "Show Translation Button",
+                    isOn: Binding(
+                        get: { controller.settings.isTranslationButtonVisible },
+                        set: { controller.settings.isTranslationButtonVisible = $0 }
+                    )
+                )
+
+                LabeledContent("Primary Button") {
+                    Picker(
+                        "Primary Button",
+                        selection: Binding(
+                            get: { controller.settings.primaryButtonAction },
+                            set: { controller.settings.primaryButtonAction = $0 }
+                        )
+                    ) {
+                        ForEach(EditorAction.primaryButtonOptions) { action in
+                            Text(action.displayName)
+                                .tag(action)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 220, alignment: .trailing)
+                }
+
+                LabeledContent {
+                    Picker(
+                        "Command + Enter",
+                        selection: Binding(
+                            get: { controller.settings.commandEnterAction },
+                            set: { controller.settings.commandEnterAction = $0 }
+                        )
+                    ) {
+                        ForEach(EditorAction.allCases) { action in
+                            Text(action.displayName)
+                                .tag(action)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 220, alignment: .trailing)
+                } label: {
+                    Text("⌘ + Enter")
+                        .accessibilityLabel("Command + Enter")
+                }
             }
         }
         .fontDesign(.rounded)
@@ -155,7 +203,7 @@ private struct ShortcutRecorderView: View {
                 errorMessage = nil
                 isRecording = true
             }
-            .frame(minWidth: 120)
+            .frame(minWidth: 120, alignment: .trailing)
             .background {
                 ShortcutCaptureView(isRecording: $isRecording) { capturedShortcut in
                     do {

@@ -33,7 +33,7 @@ final class TranslationSession {
     private var onDismiss: (@MainActor () -> Void)?
 
     private var capturedTarget: CapturedTextTarget?
-    private var translationTask: Task<Void, Never>?
+    private var actionTask: Task<Void, Never>?
 
     init(
         settings: AppSettings,
@@ -79,10 +79,28 @@ final class TranslationSession {
         state == .translating
     }
 
-    var canSubmit: Bool {
-        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && settings.isProviderEnabled(settings.selectedProviderID)
-            && !isTranslating
+    var hasAvailableProvider: Bool {
+        settings.isProviderEnabled(settings.selectedProviderID)
+    }
+
+    var isTranslationButtonVisible: Bool {
+        settings.isTranslationButtonVisible
+    }
+
+    var canPaste: Bool {
+        hasDraft && actionTask == nil
+    }
+
+    var canTranslate: Bool {
+        hasDraft && hasAvailableProvider && actionTask == nil
+    }
+
+    var canPerformPrimaryAction: Bool {
+        canPerform(settings.primaryButtonAction)
+    }
+
+    var canPerformCommandEnterAction: Bool {
+        canPerform(settings.commandEnterAction)
     }
 
     var hasAccessibilityPermission: Bool {
@@ -129,82 +147,56 @@ final class TranslationSession {
         settings.selectedProviderID = provider.id
     }
 
-    func submit() {
-        guard translationTask == nil else { return }
+    func performPrimaryAction() {
+        perform(settings.primaryButtonAction)
+    }
+
+    func performCommandEnterAction() {
+        perform(settings.commandEnterAction)
+    }
+
+    func perform(_ action: EditorAction) {
+        switch action {
+        case .paste:
+            paste()
+        case .translateAndPaste:
+            translate(thenPaste: true)
+        case .translate:
+            translate(thenPaste: false)
+        }
+    }
+
+    func paste() {
+        guard actionTask == nil else { return }
 
         do {
-            let providerID = settings.selectedProviderID
-            guard settings.isProviderEnabled(providerID) else {
-                throw ProviderError.invalidConfiguration(
-                    "Enable a model provider in Settings before translating."
-                )
-            }
-            let provider = Provider.provider(for: providerID)
-            let configuration = try providerConfiguration(for: provider)
-            let sourceText = draft
-            guard !sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-                throw ProviderError.invalidConfiguration("Enter text to translate.")
-            }
-            guard let selectedTarget else {
-                throw ProviderError.invalidConfiguration("Choose a target application.")
-            }
-
-            if capturedTarget?.application != selectedTarget {
-                capturedTarget = insertionService.captureTarget(in: selectedTarget)
-            }
-            guard let target = capturedTarget else {
-                throw ProviderError.invalidConfiguration("Choose a target application.")
-            }
-
-            state = .translating
-            let targetLanguage = settings.targetLanguage
-            translationTask = Task { [weak self] in
+            let sourceText = try sourceText()
+            let target = try insertionTarget()
+            state = .idle
+            actionTask = Task { [weak self] in
                 guard let self else { return }
-                do {
-                    let adapter = adapterFactory(providerID)
-                    let translatedText = try await adapter.translate(
-                        TranslationRequest(text: sourceText, targetLanguage: targetLanguage),
-                        configuration: configuration
-                    )
-                    try Task.checkCancellation()
-                    pasteboard.copy(translatedText)
-                    onInsertionStarted?()
-
-                    do {
-                        try await insertionService.insert(translatedText, into: target)
-                        draft = ""
-                        state = .idle
-                        translationTask = nil
-                        onSuccessfulInsertion?()
-                    } catch {
-                        state = .message(
-                            "Automatic insertion failed: \(error.localizedDescription) "
-                                + "The translation was copied. Paste it into "
-                                + "\(target.application.localizedName) manually.",
-                            isError: true
-                        )
-                        translationTask = nil
-                        onInsertionFailed?()
-                    }
-                } catch is CancellationError {
-                    state = .idle
-                    translationTask = nil
-                } catch let error as ProviderError where error == .cancelled {
-                    state = .idle
-                    translationTask = nil
-                } catch {
-                    state = .message(error.localizedDescription, isError: true)
-                    translationTask = nil
-                }
+                await insert(
+                    sourceText,
+                    into: target,
+                    copiedContentDescription: "text"
+                )
             }
         } catch {
             state = .message(error.localizedDescription, isError: true)
         }
     }
 
+    func translate() {
+        translate(thenPaste: false)
+    }
+
+    func translateAndPaste() {
+        translate(thenPaste: true)
+    }
+
     func cancel() {
-        translationTask?.cancel()
-        translationTask = nil
+        actionTask?.cancel()
+        actionTask = nil
         if isTranslating {
             state = .idle
         }
@@ -217,6 +209,124 @@ final class TranslationSession {
 
     func showError(_ message: String) {
         state = .message(message, isError: true)
+    }
+
+    private var hasDraft: Bool {
+        !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func canPerform(_ action: EditorAction) -> Bool {
+        switch action {
+        case .paste:
+            canPaste
+        case .translateAndPaste, .translate:
+            canTranslate
+        }
+    }
+
+    private func sourceText() throws -> String {
+        let sourceText = draft
+        guard !sourceText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            throw ProviderError.invalidConfiguration("Enter text.")
+        }
+        return sourceText
+    }
+
+    private func insertionTarget() throws -> CapturedTextTarget {
+        guard let selectedTarget else {
+            throw ProviderError.invalidConfiguration("Choose a target application.")
+        }
+
+        if capturedTarget?.application != selectedTarget {
+            capturedTarget = insertionService.captureTarget(in: selectedTarget)
+        }
+        guard let capturedTarget else {
+            throw ProviderError.invalidConfiguration("Choose a target application.")
+        }
+        return capturedTarget
+    }
+
+    private func translate(thenPaste: Bool) {
+        guard actionTask == nil else { return }
+
+        do {
+            let providerID = settings.selectedProviderID
+            guard settings.isProviderEnabled(providerID) else {
+                throw ProviderError.invalidConfiguration(
+                    "Enable a model provider in Settings before translating."
+                )
+            }
+            let provider = Provider.provider(for: providerID)
+            let configuration = try providerConfiguration(for: provider)
+            let sourceText = try sourceText()
+            let target: CapturedTextTarget? = thenPaste ? try insertionTarget() : nil
+            state = .translating
+            let targetLanguage = settings.targetLanguage
+            actionTask = Task { [weak self] in
+                guard let self else { return }
+                do {
+                    let adapter = adapterFactory(providerID)
+                    let translatedText = try await adapter.translate(
+                        TranslationRequest(text: sourceText, targetLanguage: targetLanguage),
+                        configuration: configuration
+                    )
+                    try Task.checkCancellation()
+                    if let target {
+                        await insert(
+                            translatedText,
+                            into: target,
+                            copiedContentDescription: "translation"
+                        )
+                    } else {
+                        draft = translatedText
+                        state = .idle
+                        actionTask = nil
+                        requestEditorFocus()
+                    }
+                } catch is CancellationError {
+                    state = .idle
+                    actionTask = nil
+                } catch let error as ProviderError where error == .cancelled {
+                    state = .idle
+                    actionTask = nil
+                } catch {
+                    state = .message(error.localizedDescription, isError: true)
+                    actionTask = nil
+                }
+            }
+        } catch {
+            state = .message(error.localizedDescription, isError: true)
+        }
+    }
+
+    private func insert(
+        _ text: String,
+        into target: CapturedTextTarget,
+        copiedContentDescription: String
+    ) async {
+        pasteboard.copy(text)
+        onInsertionStarted?()
+
+        do {
+            try await insertionService.insert(text, into: target)
+            try Task.checkCancellation()
+            draft = ""
+            state = .idle
+            actionTask = nil
+            onSuccessfulInsertion?()
+        } catch is CancellationError {
+            state = .idle
+            actionTask = nil
+        } catch {
+            state = .message(
+                "Automatic insertion failed: \(error.localizedDescription) "
+                    + "The \(copiedContentDescription) was copied. Paste it into "
+                    + "\(target.application.localizedName) manually.",
+                isError: true
+            )
+            actionTask = nil
+            onInsertionFailed?()
+        }
     }
 
     private func providerConfiguration(for provider: Provider) throws -> ProviderConfiguration {

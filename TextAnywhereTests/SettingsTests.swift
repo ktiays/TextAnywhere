@@ -23,6 +23,9 @@ final class SettingsTests: XCTestCase {
         settings.setModelID("example/model", for: .openRouter)
         settings.setThinkingEnabled(true, for: .openRouter)
         settings.isTrayEnabled = false
+        settings.isTranslationButtonVisible = false
+        settings.primaryButtonAction = .paste
+        settings.commandEnterAction = .translate
         settings.setProviderEnabled(true, for: .openRouter)
         settings.setProviderEnabled(false, for: .bailian)
         settings.setCachedModels(
@@ -38,6 +41,9 @@ final class SettingsTests: XCTestCase {
         XCTAssertTrue(restored.thinkingEnabled(for: .openRouter))
         XCTAssertFalse(restored.thinkingEnabled(for: .anthropic))
         XCTAssertFalse(restored.isTrayEnabled)
+        XCTAssertFalse(restored.isTranslationButtonVisible)
+        XCTAssertEqual(restored.primaryButtonAction, .paste)
+        XCTAssertEqual(restored.commandEnterAction, .translate)
         XCTAssertTrue(restored.isProviderEnabled(.openRouter))
         XCTAssertFalse(restored.isProviderEnabled(.bailian))
         XCTAssertEqual(restored.cachedModels(for: .openRouter).map(\.id), ["example/model"])
@@ -80,5 +86,18 @@ final class SettingsTests: XCTestCase {
         defaults.removePersistentDomain(forName: suiteName)
 
         XCTAssertTrue(AppSettings(defaults: defaults).isTrayEnabled)
+    }
+
+    func testEditorActionsUseTranslationDefaults() {
+        let suiteName = "SettingsTests.\(UUID().uuidString)"
+        guard let defaults = UserDefaults(suiteName: suiteName) else {
+            return XCTFail("Could not create test defaults")
+        }
+        defaults.removePersistentDomain(forName: suiteName)
+
+        let settings = AppSettings(defaults: defaults)
+        XCTAssertTrue(settings.isTranslationButtonVisible)
+        XCTAssertEqual(settings.primaryButtonAction, .translateAndPaste)
+        XCTAssertEqual(settings.commandEnterAction, .translateAndPaste)
     }
 }
