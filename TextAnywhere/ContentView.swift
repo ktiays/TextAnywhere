@@ -58,7 +58,7 @@ struct ContentView: View {
                     }
                     .disabled(!session.canTranslate)
                 }
-                Button("Paste") {
+                Button(session.primaryButtonTitle) {
                     session.performPrimaryAction()
                 }
                 .disabled(!session.canPerformPrimaryAction)
@@ -75,8 +75,8 @@ struct ContentView: View {
             editorFocused = true
         }
         .background {
-            CommandEnterMonitor(isEnabled: session.canPerformCommandEnterAction) {
-                session.performCommandEnterAction()
+            CommandEnterMonitor(isEnabled: session.canPerformPrimaryAction) {
+                session.performPrimaryAction()
             }
             .allowsHitTesting(false)
         }

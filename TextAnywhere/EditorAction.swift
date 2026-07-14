@@ -7,7 +7,6 @@ enum EditorAction: String, CaseIterable, Identifiable {
 
     case paste
     case translateAndPaste
-    case translate
 
     static let primaryButtonOptions: [EditorAction] = [
         .paste,
@@ -22,8 +21,6 @@ enum EditorAction: String, CaseIterable, Identifiable {
             "Paste"
         case .translateAndPaste:
             "Translate and Paste"
-        case .translate:
-            "Translate"
         }
     }
 }

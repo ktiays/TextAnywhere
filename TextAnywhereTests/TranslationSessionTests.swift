@@ -9,7 +9,7 @@ import XCTest
 
 final class TranslationSessionTests: XCTestCase {
 
-    func testSuccessfulInsertionCopiesTranslationBeforeInsertingAndCallsSuccess() async throws {
+    func testPrimaryTranslateAndPasteCopiesTranslationBeforeInsertingAndCallsSuccess() async throws {
         let environment = makeEnvironment(adapterResult: .success("Bonjour"))
         let insertionStarted = expectation(description: "Insertion started")
         let success = expectation(description: "Successful insertion")
@@ -26,7 +26,7 @@ final class TranslationSessionTests: XCTestCase {
         environment.session.draft = "Hello"
         environment.session.selectTarget(Self.targetApplication)
 
-        environment.session.translateAndPaste()
+        environment.session.performPrimaryAction()
         await fulfillment(of: [insertionStarted, success], timeout: 1, enforceOrder: true)
 
         XCTAssertEqual(environment.insertionService.insertedText, "Bonjour")
@@ -123,19 +123,13 @@ final class TranslationSessionTests: XCTestCase {
         XCTAssertEqual(environment.session.draft, "")
     }
 
-    func testConfiguredCommandEnterTranslatesInPlaceWithoutInsertingOrCopying() async throws {
+    func testPrimaryButtonTitleReflectsConfiguredAction() {
         let environment = makeEnvironment(adapterResult: .success("Bonjour"))
-        environment.settings.commandEnterAction = .translate
-        environment.session.draft = "Hello"
 
-        environment.session.performCommandEnterAction()
-        try await waitUntil {
-            environment.session.draft == "Bonjour"
-        }
+        XCTAssertEqual(environment.session.primaryButtonTitle, "Translate and Paste")
 
-        XCTAssertNil(environment.insertionService.insertedText)
-        XCTAssertNil(environment.pasteboard.text)
-        XCTAssertEqual(environment.session.state, .idle)
+        environment.settings.primaryButtonAction = .paste
+        XCTAssertEqual(environment.session.primaryButtonTitle, "Paste")
     }
 
     func testTranslationActionsAreUnavailableWithoutAnEnabledProvider() {

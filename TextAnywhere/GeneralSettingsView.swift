@@ -74,7 +74,7 @@ struct GeneralSettingsView: View {
                 Text("Accessibility access lets TextAnywhere insert a translation into the selected app. Without it, the translation is copied to the clipboard.")
             }
             
-            Section("Editor") {
+            Section {
                 Toggle(
                     "Show Translation Button",
                     isOn: Binding(
@@ -99,26 +99,10 @@ struct GeneralSettingsView: View {
                     .labelsHidden()
                     .frame(width: 220, alignment: .trailing)
                 }
-
-                LabeledContent {
-                    Picker(
-                        "Command + Enter",
-                        selection: Binding(
-                            get: { controller.settings.commandEnterAction },
-                            set: { controller.settings.commandEnterAction = $0 }
-                        )
-                    ) {
-                        ForEach(EditorAction.allCases) { action in
-                            Text(action.displayName)
-                                .tag(action)
-                        }
-                    }
-                    .labelsHidden()
-                    .frame(width: 220, alignment: .trailing)
-                } label: {
-                    Text("⌘ + Enter")
-                        .accessibilityLabel("Command + Enter")
-                }
+            } header: {
+                Text("Editor")
+            } footer: {
+                Text("⌘ + Enter triggers the primary button.")
             }
         }
         .fontDesign(.rounded)

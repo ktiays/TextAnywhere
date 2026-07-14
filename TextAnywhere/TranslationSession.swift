@@ -99,8 +99,8 @@ final class TranslationSession {
         canPerform(settings.primaryButtonAction)
     }
 
-    var canPerformCommandEnterAction: Bool {
-        canPerform(settings.commandEnterAction)
+    var primaryButtonTitle: String {
+        settings.primaryButtonAction.displayName
     }
 
     var hasAccessibilityPermission: Bool {
@@ -151,18 +151,12 @@ final class TranslationSession {
         perform(settings.primaryButtonAction)
     }
 
-    func performCommandEnterAction() {
-        perform(settings.commandEnterAction)
-    }
-
-    func perform(_ action: EditorAction) {
+    private func perform(_ action: EditorAction) {
         switch action {
         case .paste:
             paste()
         case .translateAndPaste:
             translate(thenPaste: true)
-        case .translate:
-            translate(thenPaste: false)
         }
     }
 
@@ -219,7 +213,7 @@ final class TranslationSession {
         switch action {
         case .paste:
             canPaste
-        case .translateAndPaste, .translate:
+        case .translateAndPaste:
             canTranslate
         }
     }

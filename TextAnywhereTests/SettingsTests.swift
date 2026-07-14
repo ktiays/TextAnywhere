@@ -25,7 +25,6 @@ final class SettingsTests: XCTestCase {
         settings.isTrayEnabled = false
         settings.isTranslationButtonVisible = false
         settings.primaryButtonAction = .paste
-        settings.commandEnterAction = .translate
         settings.setProviderEnabled(true, for: .openRouter)
         settings.setProviderEnabled(false, for: .bailian)
         settings.setCachedModels(
@@ -43,7 +42,6 @@ final class SettingsTests: XCTestCase {
         XCTAssertFalse(restored.isTrayEnabled)
         XCTAssertFalse(restored.isTranslationButtonVisible)
         XCTAssertEqual(restored.primaryButtonAction, .paste)
-        XCTAssertEqual(restored.commandEnterAction, .translate)
         XCTAssertTrue(restored.isProviderEnabled(.openRouter))
         XCTAssertFalse(restored.isProviderEnabled(.bailian))
         XCTAssertEqual(restored.cachedModels(for: .openRouter).map(\.id), ["example/model"])
@@ -98,6 +96,5 @@ final class SettingsTests: XCTestCase {
         let settings = AppSettings(defaults: defaults)
         XCTAssertTrue(settings.isTranslationButtonVisible)
         XCTAssertEqual(settings.primaryButtonAction, .translateAndPaste)
-        XCTAssertEqual(settings.commandEnterAction, .translateAndPaste)
     }
 }
