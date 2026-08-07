@@ -43,11 +43,10 @@ struct AccessibilityInsertionService: TextInsertionService {
             throw TextInsertionError.permissionRequired
         }
 
-        try await pasteUsingClipboard(text, into: target.application)
+        try await pasteUsingClipboard(into: target.application)
     }
 
     private func pasteUsingClipboard(
-        _ text: String,
         into application: TargetApplication
     ) async throws {
         guard let runningApplication = NSRunningApplication(
@@ -55,8 +54,6 @@ struct AccessibilityInsertionService: TextInsertionService {
         ), !runningApplication.isTerminated else {
             throw TextInsertionError.applicationUnavailable
         }
-
-        SystemPasteboardWriter().copy(text)
 
         guard runningApplication.activate(options: [.activateAllWindows]) else {
             throw TextInsertionError.couldNotActivateApplication
