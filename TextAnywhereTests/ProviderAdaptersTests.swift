@@ -21,6 +21,7 @@ final class ProviderAdaptersTests: XCTestCase {
             (.openRouter, "/api/v1/models", #"{"data":[{"id":"openai/gpt-test","name":"GPT Test"}]}"#, ["openai/gpt-test"]),
             (.xAI, "/v1/language-models", #"{"models":[{"id":"grok-test"}]}"#, ["grok-test"]),
             (.bailian, "/compatible-mode/v1/models", #"{"data":[{"id":"qwen-test"},{"id":"embedding-test"}]}"#, ["qwen-test"]),
+            (.deepSeek, "/models", #"{"data":[{"id":"deepseek-chat"}]}"#, ["deepseek-chat"]),
             (.ollama, "/api/tags", #"{"models":[{"name":"qwen:latest","model":"qwen:latest"}]}"#, ["qwen:latest"]),
         ]
 
@@ -46,6 +47,7 @@ final class ProviderAdaptersTests: XCTestCase {
             (.openRouter, "/api/v1/chat/completions", Self.chatBody),
             (.xAI, "/v1/responses", Self.responsesBody),
             (.bailian, "/compatible-mode/v1/chat/completions", Self.chatBody),
+            (.deepSeek, "/chat/completions", Self.chatBody),
             (.ollama, "/api/chat", #"{"message":{"role":"assistant","content":"Bonjour"}}"#),
         ]
 
@@ -86,6 +88,7 @@ final class ProviderAdaptersTests: XCTestCase {
             (.openRouter, Self.chatBody, { ($0["reasoning"] as? [String: Any])?["enabled"] }),
             (.xAI, Self.responsesBody, { ($0["reasoning"] as? [String: Any])?["effort"] }),
             (.bailian, Self.chatBody, { $0["enable_thinking"] }),
+            (.deepSeek, Self.chatBody, { ($0["thinking"] as? [String: Any])?["type"] }),
             (.ollama, #"{"message":{"role":"assistant","content":"Bonjour"}}"#, { $0["think"] }),
         ]
 
@@ -115,6 +118,11 @@ final class ProviderAdaptersTests: XCTestCase {
                     )
                 } else if testCase.0 == .bailian {
                     XCTAssertEqual(body["enable_thinking"] as? Bool, false)
+                } else if testCase.0 == .deepSeek {
+                    XCTAssertEqual(
+                        (body["thinking"] as? [String: Any])?["type"] as? String,
+                        "disabled"
+                    )
                 } else {
                     XCTAssertNil(
                         testCase.2(body),
