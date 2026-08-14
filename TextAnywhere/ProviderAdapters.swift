@@ -250,9 +250,19 @@ private struct BailianAdapter: TranslationProviderAdapter {
     }
 
     func translate(_ request: TranslationRequest, configuration: ProviderConfiguration) async throws -> String {
+        // Qwen-MT rejects system/assistant roles and requires translation_options.
+        if isQwenMtModel(configuration.modelID) {
+            return try await translateQwenMt(
+                request,
+                configuration: configuration,
+                session: session,
+                apiKey: requiredAPIKey(configuration)
+            )
+        }
+
         // DashScope requires an explicit `enable_thinking` value on non-streaming calls
         // to reasoning-capable models, so the flag is always sent for this provider.
-        try await translateChatCompletion(
+        return try await translateChatCompletion(
             request,
             configuration: configuration,
             session: session,
@@ -332,6 +342,38 @@ private struct OllamaAdapter: TranslationProviderAdapter {
     }
 }
 
+private func translateQwenMt(
+    _ request: TranslationRequest,
+    configuration: ProviderConfiguration,
+    session: URLSession,
+    apiKey: String
+) async throws -> String {
+    var urlRequest = try authorizedRequest(
+        url: endpoint(configuration.baseURL, path: "chat/completions"),
+        apiKey: apiKey
+    )
+    urlRequest.httpMethod = "POST"
+    urlRequest.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    urlRequest.httpBody = try JSONEncoder().encode(
+        QwenMtChatCompletionRequest(
+            model: requiredModelID(configuration),
+            messages: [ChatMessage(role: "user", content: request.text)],
+            stream: false,
+            translationOptions: QwenMtTranslationOptions(
+                sourceLang: "auto",
+                targetLang: qwenMtLanguageName(for: request.targetLanguage)
+            )
+        )
+    )
+
+    let data = try await ProviderHTTPClient(session: session).send(urlRequest)
+    let response = try decode(ChatCompletionResponse.self, from: data)
+    guard let content = response.choices.first?.message.content else {
+        throw ProviderError.invalidResponse
+    }
+    return try validatedOutput(content)
+}
+
 private func translateChatCompletion(
     _ request: TranslationRequest,
     configuration: ProviderConfiguration,
@@ -371,6 +413,53 @@ private func translateChatCompletion(
     }
     return try validatedOutput(content)
 }
+
+private func isQwenMtModel(_ modelID: String) -> Bool {
+    modelID
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+        .lowercased()
+        .hasPrefix("qwen-mt-")
+}
+
+private func qwenMtLanguageName(for language: TranslationLanguage) -> String {
+    let code = language.code.trimmingCharacters(in: .whitespacesAndNewlines)
+    if let mapped = qwenMtLanguageNames[code] {
+        return mapped
+    }
+
+    let normalized = code.lowercased().replacingOccurrences(of: "_", with: "-")
+    if normalized.hasPrefix("zh-hant") || normalized.hasPrefix("zh-tw") || normalized.hasPrefix("zh-hk") {
+        return "Traditional Chinese"
+    }
+    if normalized == "zh" || normalized.hasPrefix("zh-") {
+        return "Chinese"
+    }
+
+    return Locale(identifier: "en").localizedString(forLanguageCode: code) ?? code
+}
+
+private let qwenMtLanguageNames: [String: String] = [
+    "auto": "auto",
+    "en": "English",
+    "zh": "Chinese",
+    "zh-CN": "Chinese",
+    "zh-Hans": "Chinese",
+    "zh-TW": "Traditional Chinese",
+    "zh-HK": "Traditional Chinese",
+    "zh-Hant": "Traditional Chinese",
+    "ja": "Japanese",
+    "ko": "Korean",
+    "fr": "French",
+    "de": "German",
+    "es": "Spanish",
+    "pt": "Portuguese",
+    "ru": "Russian",
+    "ar": "Arabic",
+    "it": "Italian",
+    "nl": "Dutch",
+    "th": "Thai",
+    "vi": "Vietnamese",
+]
 
 private func requiredAPIKey(_ configuration: ProviderConfiguration) throws -> String {
     guard let apiKey = configuration.apiKey?.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -528,6 +617,30 @@ private struct ResponsesContentItem: Decodable {
 private struct ChatMessage: Codable {
     let role: String
     let content: String
+}
+
+private struct QwenMtTranslationOptions: Encodable {
+    let sourceLang: String
+    let targetLang: String
+
+    enum CodingKeys: String, CodingKey {
+        case sourceLang = "source_lang"
+        case targetLang = "target_lang"
+    }
+}
+
+private struct QwenMtChatCompletionRequest: Encodable {
+    let model: String
+    let messages: [ChatMessage]
+    let stream: Bool
+    let translationOptions: QwenMtTranslationOptions
+
+    enum CodingKeys: String, CodingKey {
+        case model
+        case messages
+        case stream
+        case translationOptions = "translation_options"
+    }
 }
 
 private struct ChatCompletionRequest: Encodable {

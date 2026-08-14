@@ -133,6 +133,97 @@ final class ProviderAdaptersTests: XCTestCase {
         }
     }
 
+    func testQwenMtTranslationUsesTranslationOptions() async throws {
+        let capture = BodyCapture()
+        URLProtocolStub.handler = { request in
+            XCTAssertEqual(request.url?.path, "/compatible-mode/v1/chat/completions")
+            capture.body = try JSONSerialization.jsonObject(with: request.bodyData()) as? [String: Any]
+            return try Self.response(for: request, body: Self.chatBody)
+        }
+
+        let adapter = ProviderAdapterRegistry.adapter(for: .bailian, session: stubbedSession())
+        let result = try await adapter.translate(
+            TranslationRequest(
+                text: "Hello",
+                targetLanguage: .init(code: "zh-CN", displayName: "简体中文")
+            ),
+            configuration: configuration(for: .bailian, modelID: "qwen-mt-flash")
+        )
+
+        XCTAssertEqual(result, "Bonjour")
+        let body = try XCTUnwrap(capture.body)
+        XCTAssertEqual(body["model"] as? String, "qwen-mt-flash")
+        XCTAssertEqual(body["stream"] as? Bool, false)
+        XCTAssertNil(body["enable_thinking"])
+
+        let messages = try XCTUnwrap(body["messages"] as? [[String: Any]])
+        XCTAssertEqual(messages.count, 1)
+        XCTAssertEqual(messages.first?["role"] as? String, "user")
+        XCTAssertEqual(messages.first?["content"] as? String, "Hello")
+
+        let options = try XCTUnwrap(body["translation_options"] as? [String: Any])
+        XCTAssertEqual(options["source_lang"] as? String, "auto")
+        XCTAssertEqual(options["target_lang"] as? String, "Chinese")
+    }
+
+    func testQwenMtLanguageMappingForCommonTargets() async throws {
+        let cases: [(String, String, String)] = [
+            ("qwen-mt-plus", "fr", "French"),
+            ("QWEN-MT-FLASH", "ja", "Japanese"),
+            ("qwen-mt-lite", "zh-TW", "Traditional Chinese"),
+            ("qwen-mt-turbo", "de", "German"),
+        ]
+
+        for testCase in cases {
+            let capture = BodyCapture()
+            URLProtocolStub.handler = { request in
+                capture.body = try JSONSerialization.jsonObject(with: request.bodyData()) as? [String: Any]
+                return try Self.response(for: request, body: Self.chatBody)
+            }
+
+            let adapter = ProviderAdapterRegistry.adapter(for: .bailian, session: stubbedSession())
+            _ = try await adapter.translate(
+                TranslationRequest(
+                    text: "Hello",
+                    targetLanguage: .init(code: testCase.1, displayName: "Localized")
+                ),
+                configuration: configuration(for: .bailian, modelID: testCase.0)
+            )
+
+            let options = try XCTUnwrap(
+                (capture.body?["translation_options"] as? [String: Any])
+            )
+            XCTAssertEqual(
+                options["target_lang"] as? String,
+                testCase.2,
+                "Unexpected Qwen-MT language for \(testCase.0) / \(testCase.1)"
+            )
+        }
+    }
+
+    func testBailianChatModelsKeepPromptTemplate() async throws {
+        let capture = BodyCapture()
+        URLProtocolStub.handler = { request in
+            capture.body = try JSONSerialization.jsonObject(with: request.bodyData()) as? [String: Any]
+            return try Self.response(for: request, body: Self.chatBody)
+        }
+
+        let adapter = ProviderAdapterRegistry.adapter(for: .bailian, session: stubbedSession())
+        _ = try await adapter.translate(
+            TranslationRequest(text: "Hello", targetLanguage: .english),
+            configuration: configuration(for: .bailian, modelID: "qwen-plus")
+        )
+
+        let body = try XCTUnwrap(capture.body)
+        XCTAssertNil(body["translation_options"])
+        XCTAssertEqual(body["enable_thinking"] as? Bool, false)
+
+        let messages = try XCTUnwrap(body["messages"] as? [[String: Any]])
+        XCTAssertEqual(messages.map { $0["role"] as? String }, ["system", "user"])
+        let userContent = try XCTUnwrap(messages.last?["content"] as? String)
+        XCTAssertTrue(userContent.contains("Text: Hello"))
+    }
+
     func testHTTPErrorIncludesProviderMessage() async {
         URLProtocolStub.handler = { request in
             try Self.response(
@@ -237,12 +328,13 @@ final class ProviderAdaptersTests: XCTestCase {
 
     private func configuration(
         for providerID: ProviderIdentifier,
+        modelID: String = "test-model",
         thinkingEnabled: Bool = false
     ) -> ProviderConfiguration {
         ProviderConfiguration(
             providerID: providerID,
             baseURL: Provider.provider(for: providerID).defaultBaseURLURL,
-            modelID: "test-model",
+            modelID: modelID,
             apiKey: providerID == .ollama ? nil : "test-key",
             thinkingEnabled: thinkingEnabled
         )
