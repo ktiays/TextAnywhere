@@ -110,6 +110,7 @@ final class TranslationSession {
     func prepareForPresentation() {
         applicationTracker.refreshRunningApplications()
         if let application = applicationTracker.preferredTargetApplication() {
+            applicationTracker.refreshRememberedWindow(for: application)
             selectTarget(application)
         }
         if !isTranslating {
@@ -135,7 +136,7 @@ final class TranslationSession {
 
     func selectTarget(_ application: TargetApplication) {
         selectedTarget = application
-        capturedTarget = insertionService.captureTarget(in: application)
+        capturedTarget = capturedTextTarget(for: application)
     }
 
     func requestAccessibilityPermission() {
@@ -232,7 +233,7 @@ final class TranslationSession {
         }
 
         if capturedTarget?.application != selectedTarget {
-            capturedTarget = insertionService.captureTarget(in: selectedTarget)
+            capturedTarget = capturedTextTarget(for: selectedTarget)
         }
         guard let capturedTarget else {
             throw ProviderError.invalidConfiguration("Choose a target application.")
@@ -291,6 +292,13 @@ final class TranslationSession {
         } catch {
             state = .message(error.localizedDescription, isError: true)
         }
+    }
+
+    private func capturedTextTarget(for application: TargetApplication) -> CapturedTextTarget {
+        insertionService.captureTarget(
+            in: application,
+            window: applicationTracker.rememberedWindow(for: application)
+        )
     }
 
     private func insert(

@@ -266,8 +266,8 @@ private final class FakeInsertionService: TextInsertionService {
 
     func requestPermission() {}
 
-    func captureTarget(in application: TargetApplication) -> CapturedTextTarget {
-        CapturedTextTarget(application: application)
+    func captureTarget(in application: TargetApplication, window: TargetWindow?) -> CapturedTextTarget {
+        CapturedTextTarget(application: application, window: window)
     }
 
     func insert(_ text: String, into target: CapturedTextTarget) async throws {

@@ -11,13 +11,14 @@ import CoreGraphics
 struct CapturedTextTarget {
 
     let application: TargetApplication
+    let window: TargetWindow?
 }
 
 protocol TextInsertionService {
 
     var isTrusted: Bool { get }
     func requestPermission()
-    func captureTarget(in application: TargetApplication) -> CapturedTextTarget
+    func captureTarget(in application: TargetApplication, window: TargetWindow?) -> CapturedTextTarget
     func insert(_ text: String, into target: CapturedTextTarget) async throws
 }
 
@@ -34,8 +35,8 @@ struct AccessibilityInsertionService: TextInsertionService {
         AXIsProcessTrustedWithOptions(options)
     }
 
-    func captureTarget(in application: TargetApplication) -> CapturedTextTarget {
-        CapturedTextTarget(application: application)
+    func captureTarget(in application: TargetApplication, window: TargetWindow?) -> CapturedTextTarget {
+        CapturedTextTarget(application: application, window: window)
     }
 
     func insert(_ text: String, into target: CapturedTextTarget) async throws {
@@ -43,11 +44,12 @@ struct AccessibilityInsertionService: TextInsertionService {
             throw TextInsertionError.permissionRequired
         }
 
-        try await pasteUsingClipboard(into: target.application)
+        try await pasteUsingClipboard(into: target.application, window: target.window)
     }
 
     private func pasteUsingClipboard(
-        into application: TargetApplication
+        into application: TargetApplication,
+        window: TargetWindow?
     ) async throws {
         guard let runningApplication = NSRunningApplication(
             processIdentifier: application.processIdentifier
@@ -55,8 +57,14 @@ struct AccessibilityInsertionService: TextInsertionService {
             throw TextInsertionError.applicationUnavailable
         }
 
-        guard runningApplication.activate(options: [.activateAllWindows]) else {
-            throw TextInsertionError.couldNotActivateApplication
+        let didFocusRememberedWindow = window?.raise() == true
+        if NSApp.isActive {
+            NSApp.yieldActivation(to: runningApplication)
+        }
+        if didFocusRememberedWindow {
+            runningApplication.activate()
+        } else {
+            runningApplication.activate(options: [.activateAllWindows])
         }
 
         for _ in 0..<10 where !runningApplication.isActive {
@@ -94,6 +102,74 @@ struct AccessibilityInsertionService: TextInsertionService {
         keyDown.post(tap: .cgSessionEventTap)
         keyUp.post(tap: .cgSessionEventTap)
         try await Task.sleep(for: .milliseconds(100))
+    }
+}
+
+extension TargetWindow {
+
+    var isValid: Bool {
+        copyAttributeValue(kAXRoleAttribute as String) != nil
+    }
+
+    static func currentlyFocused(in processIdentifier: pid_t) -> TargetWindow? {
+        let application = AXUIElementCreateApplication(processIdentifier)
+        let element = copyElement(from: application, attribute: kAXFocusedWindowAttribute as String)
+            ?? copyElement(from: application, attribute: kAXMainWindowAttribute as String)
+        guard let element else { return nil }
+        return TargetWindow(processIdentifier: processIdentifier, element: element)
+    }
+
+    @discardableResult
+    func raise() -> Bool {
+        guard isValid else { return false }
+
+        if isMinimized {
+            AXUIElementSetAttributeValue(
+                element,
+                kAXMinimizedAttribute as CFString,
+                kCFBooleanFalse
+            )
+        }
+
+        let mainResult = AXUIElementSetAttributeValue(
+            element,
+            kAXMainAttribute as CFString,
+            kCFBooleanTrue
+        )
+        AXUIElementSetAttributeValue(
+            element,
+            kAXFocusedAttribute as CFString,
+            kCFBooleanTrue
+        )
+        let raiseResult = AXUIElementPerformAction(element, kAXRaiseAction as CFString)
+        return mainResult == .success || raiseResult == .success
+    }
+
+    private var isMinimized: Bool {
+        guard let value = copyAttributeValue(kAXMinimizedAttribute as String),
+              CFGetTypeID(value) == CFBooleanGetTypeID() else {
+            return false
+        }
+        return CFBooleanGetValue(unsafeBitCast(value, to: CFBoolean.self))
+    }
+
+    private func copyAttributeValue(_ attribute: String) -> CFTypeRef? {
+        Self.copyAttributeValue(from: element, attribute: attribute)
+    }
+
+    private static func copyElement(from element: AXUIElement, attribute: String) -> AXUIElement? {
+        guard let value = copyAttributeValue(from: element, attribute: attribute),
+              CFGetTypeID(value) == AXUIElementGetTypeID() else {
+            return nil
+        }
+        return (value as! AXUIElement)
+    }
+
+    private static func copyAttributeValue(from element: AXUIElement, attribute: String) -> CFTypeRef? {
+        var value: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(element, attribute as CFString, &value)
+        guard result == .success else { return nil }
+        return value
     }
 }
 
