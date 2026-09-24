@@ -8,12 +8,15 @@ import SwiftUI
 private enum SettingsPane: Hashable {
 
     case general
+    case voiceInput
     case provider(ProviderIdentifier)
 
     var title: String {
         switch self {
         case .general:
             "General"
+        case .voiceInput:
+            "Voice Input"
         case .provider(let identifier):
             Provider.provider(for: identifier).name
         }
@@ -32,6 +35,8 @@ struct SettingsView: View {
                 Section {
                     Label("General", systemImage: "gearshape")
                         .tag(SettingsPane.general)
+                    Label("Voice Input", systemImage: "mic")
+                        .tag(SettingsPane.voiceInput)
                 }
 
                 Section("Providers") {
@@ -100,6 +105,8 @@ struct SettingsView: View {
         switch selectedPane {
         case .general:
             GeneralSettingsView(controller: controller)
+        case .voiceInput:
+            VoiceInputSettingsView(settings: controller.settings)
         case .provider(let identifier):
             ProvidersPage(
                 controller: controller,

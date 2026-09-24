@@ -16,6 +16,9 @@ final class TranslationSession {
         case message(String, isError: Bool)
     }
 
+    let voiceInput = VoiceInput()
+    private var hasBailianAPIKey = false
+
     var draft = ""
     private(set) var state: State = .idle
     private(set) var selectedTarget: TargetApplication?
@@ -88,11 +91,11 @@ final class TranslationSession {
     }
 
     var canPaste: Bool {
-        hasDraft && actionTask == nil
+        hasDraft && actionTask == nil && !voiceInput.isActive
     }
 
     var canTranslate: Bool {
-        hasDraft && hasAvailableProvider && actionTask == nil
+        hasDraft && hasAvailableProvider && actionTask == nil && !voiceInput.isActive
     }
 
     var canPerformPrimaryAction: Bool {
@@ -108,6 +111,7 @@ final class TranslationSession {
     }
 
     func prepareForPresentation() {
+        refreshVoiceInputAvailability()
         applicationTracker.refreshRunningApplications()
         if let application = applicationTracker.preferredTargetApplication() {
             applicationTracker.refreshRememberedWindow(for: application)
@@ -162,7 +166,7 @@ final class TranslationSession {
     }
 
     func paste() {
-        guard actionTask == nil else { return }
+        guard actionTask == nil, !voiceInput.isActive else { return }
 
         do {
             let sourceText = try sourceText()
@@ -189,7 +193,60 @@ final class TranslationSession {
         translate(thenPaste: true)
     }
 
+    var isVoiceInputAvailable: Bool {
+        settings.isProviderEnabled(.bailian) && hasBailianAPIKey
+    }
+
+    func refreshVoiceInputAvailability() {
+        let key = (try? credentials.apiKey(for: .bailian)) ?? ""
+        hasBailianAPIKey = !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    func handleEscape() {
+        if voiceInput.isActive {
+            voiceInput.cancel()
+            requestEditorFocus()
+        } else {
+            dismiss()
+        }
+    }
+
+    var canStartVoiceInput: Bool {
+        isVoiceInputAvailable && actionTask == nil && !voiceInput.isActive
+    }
+
+    func toggleVoiceInput() {
+        if voiceInput.phase == .recording {
+            voiceInput.finish { [weak self] text in
+                guard let self else { return }
+                draft += draft.isEmpty ? text : "\n" + text
+                state = .idle
+                requestEditorFocus()
+            } onError: { [weak self] message in
+                self?.showError(message)
+            }
+            return
+        }
+        guard canStartVoiceInput else { return }
+        do {
+            let configuration = try TranscriptionConfiguration(
+                endpoint: TranscriptionConfiguration.defaultEndpoint,
+                model: settings.transcriptionModel,
+                apiKey: credentials.apiKey(for: TranscriptionConfiguration.credentialID)
+            )
+            state = .idle
+            voiceInput.start(configuration: configuration, onRecordingLimit: { [weak self] in
+                self?.toggleVoiceInput()
+            }) { [weak self] message in
+                self?.showError(message)
+            }
+        } catch {
+            showError(error.localizedDescription)
+        }
+    }
+
     func cancel() {
+        voiceInput.cancel()
         actionTask?.cancel()
         actionTask = nil
         if isTranslating {
@@ -242,7 +299,7 @@ final class TranslationSession {
     }
 
     private func translate(thenPaste: Bool) {
-        guard actionTask == nil else { return }
+        guard actionTask == nil, !voiceInput.isActive else { return }
 
         do {
             let providerID = settings.selectedProviderID

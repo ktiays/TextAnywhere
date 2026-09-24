@@ -42,6 +42,10 @@ final class AppSettings {
 
     private let defaults: UserDefaults
 
+    var transcriptionModel: String {
+        didSet { defaults.set(transcriptionModel, forKey: "transcriptionModel") }
+    }
+
     var selectedProviderID: ProviderIdentifier {
         didSet {
             defaults.set(selectedProviderID.rawValue, forKey: Key.selectedProvider)
@@ -96,6 +100,7 @@ final class AppSettings {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        transcriptionModel = defaults.string(forKey: "transcriptionModel") ?? TranscriptionConfiguration.defaultModel
 
         let providerValue = defaults.string(forKey: Key.selectedProvider)
         let initialProviderID = providerValue.map(ProviderIdentifier.init(rawValue:)) ?? .bailian

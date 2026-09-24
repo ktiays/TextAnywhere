@@ -10,6 +10,7 @@ import SwiftUI
 struct CommandEnterMonitor: NSViewRepresentable {
 
     let isEnabled: Bool
+    var onEscape: (() -> Void)? = nil
     let action: () -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -24,6 +25,7 @@ struct CommandEnterMonitor: NSViewRepresentable {
         context.coordinator.update(
             hostView: nsView,
             isEnabled: isEnabled,
+            onEscape: onEscape,
             action: action
         )
     }
@@ -37,15 +39,18 @@ struct CommandEnterMonitor: NSViewRepresentable {
         private weak var hostView: NSView?
         private var eventMonitor: Any?
         private var isEnabled = false
+        private var onEscape: (() -> Void)?
         private var action: (() -> Void)?
 
         func update(
             hostView: NSView,
             isEnabled: Bool,
+            onEscape: (() -> Void)?,
             action: @escaping () -> Void
         ) {
             self.hostView = hostView
             self.isEnabled = isEnabled
+            self.onEscape = onEscape
             self.action = action
             start()
         }
@@ -56,15 +61,19 @@ struct CommandEnterMonitor: NSViewRepresentable {
                 self.eventMonitor = nil
             }
             action = nil
+            onEscape = nil
         }
 
         private func start() {
             guard eventMonitor == nil else { return }
             eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) {
                 [weak self] event in
-                guard let self,
-                      isEnabled,
-                      event.window === hostView?.window,
+                guard let self, event.window === hostView?.window else { return event }
+                if event.keyCode == UInt16(kVK_Escape), let onEscape {
+                    onEscape()
+                    return nil
+                }
+                guard isEnabled,
                       isCommandEnter(event),
                       !hasMarkedText(in: event.window) else {
                     return event

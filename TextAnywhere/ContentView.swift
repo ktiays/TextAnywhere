@@ -28,7 +28,7 @@ struct ContentView: View {
                     .font(.body)
                     .scrollContentBackground(.hidden)
                     .focused($editorFocused)
-                    .disabled(session.isTranslating)
+                    .disabled(session.isTranslating || session.voiceInput.isActive)
 
                 if session.draft.isEmpty && !editorHasMarkedText {
                     Text("Type text to translate…")
@@ -46,17 +46,46 @@ struct ContentView: View {
             }
 
             HStack {
-                providerMenu
-                Spacer()
+                if session.voiceInput.phase == .recording {
+                    AudioWaveformView(levels: session.voiceInput.levels)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 24)
+                } else if session.voiceInput.isActive {
+                    HStack(spacing: 8) {
+                        ProgressView()
+                            .controlSize(.small)
+                        Text(session.voiceInput.phase == .transcribing ? "Transcribing…" : "Requesting microphone access…")
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                } else {
+                    providerMenu
+                    Spacer()
+                }
                 if session.isTranslating {
                     ProgressView()
                         .controlSize(.small)
                 }
-                if session.isTranslationButtonVisible {
+                if session.isTranslationButtonVisible && !session.voiceInput.isActive {
                     Button("Translate") {
                         session.translate()
                     }
                     .disabled(!session.canTranslate)
+                }
+                if session.isVoiceInputAvailable || session.voiceInput.isActive {
+                    Button {
+                        session.toggleVoiceInput()
+                    } label: {
+                        Image(systemName: session.voiceInput.phase == .recording ? "stop.fill" : "mic.fill")
+                            .foregroundStyle(session.voiceInput.phase == .recording ? Color.red : Color.primary)
+                            .frame(width: 24, height: 24)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(session.voiceInput.phase == .recording ? "Stop and Transcribe" : "Start Voice Input")
+                    .help(session.voiceInput.phase == .recording ? "Stop and transcribe recording (Esc to cancel)" : "Start voice input")
+                    .disabled(!session.canStartVoiceInput && session.voiceInput.phase != .recording)
                 }
                 Button(session.primaryButtonTitle) {
                     session.performPrimaryAction()
@@ -75,7 +104,10 @@ struct ContentView: View {
             editorFocused = true
         }
         .background {
-            CommandEnterMonitor(isEnabled: session.canPerformPrimaryAction) {
+            CommandEnterMonitor(
+                isEnabled: session.canPerformPrimaryAction,
+                onEscape: session.voiceInput.isActive ? { session.handleEscape() } : nil
+            ) {
                 session.performPrimaryAction()
             }
             .allowsHitTesting(false)
@@ -90,7 +122,7 @@ struct ContentView: View {
             }
         }
         .onExitCommand {
-            session.dismiss()
+            session.handleEscape()
         }
     }
 
@@ -181,5 +213,33 @@ struct ContentView: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
+    }
+}
+
+private struct AudioWaveformView: View {
+    let levels: [Float]
+
+    var body: some View {
+        Canvas { context, size in
+            let spacing: CGFloat = 5
+            let count = max(1, Int(size.width / spacing))
+            let visibleLevels = Array(levels.suffix(count))
+            let leadingCount = count - visibleLevels.count
+            for index in 0..<count {
+                let level = index < leadingCount ? 0 : CGFloat(visibleLevels[index - leadingCount])
+                let height = max(2, level * size.height)
+                let rect = CGRect(
+                    x: CGFloat(index) * spacing,
+                    y: (size.height - height) / 2,
+                    width: 2,
+                    height: height
+                )
+                context.fill(
+                    Path(roundedRect: rect, cornerRadius: 1),
+                    with: .color(.white)
+                )
+            }
+        }
+        .accessibilityLabel("Recording audio. Press Escape to cancel.")
     }
 }

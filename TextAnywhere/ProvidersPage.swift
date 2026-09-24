@@ -139,6 +139,7 @@ struct ProvidersPage: View {
                 apiKey = newValue
                 do {
                     try controller.credentials.setAPIKey(newValue, for: provider.id)
+                    controller.session.refreshVoiceInputAvailability()
                     statusMessage = nil
                     isStatusError = false
                 } catch {
