@@ -19,7 +19,13 @@ final class TranslationSession {
     let voiceInput = VoiceInput()
     private var hasBailianAPIKey = false
 
-    var draft = ""
+    var draft = "" {
+        didSet {
+            if case .message(_, isError: true) = state, draft != oldValue {
+                state = .idle
+            }
+        }
+    }
     private(set) var state: State = .idle
     private(set) var selectedTarget: TargetApplication?
     private(set) var focusRequestID = 0

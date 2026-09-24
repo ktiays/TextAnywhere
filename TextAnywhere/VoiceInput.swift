@@ -89,8 +89,11 @@ final class VoiceInput: NSObject, AVAudioRecorderDelegate {
         case idle, requestingPermission, recording, transcribing
     }
 
+    static let meteringInterval: TimeInterval = 0.05
+
     private(set) var phase: Phase = .idle
     private(set) var levels: [Float] = []
+    private(set) var lastLevelDate = Date.distantPast
     private var meteringTask: Task<Void, Never>?
     private var recorder: AVAudioRecorder?
     private var file: URL?
@@ -184,18 +187,22 @@ final class VoiceInput: NSObject, AVAudioRecorderDelegate {
     private func startMetering() {
         levels = []
         meteringTask = Task { [weak self] in
+            var deadline = ContinuousClock.now
             while !Task.isCancelled {
                 guard let self, self.phase == .recording, let recorder = self.recorder else { return }
                 recorder.updateMeters()
                 // Decibels are already logarithmic, so a linear map over the speech range
-                // (-45 dB noise floor to -5 dB loud speech) tracks perceived loudness.
+                // (-45 dB noise floor to -15 dB loud speech) tracks perceived loudness.
                 let power = recorder.averagePower(forChannel: 0)
-                self.levels.append(min(1, max(0, (power + 45) / 40)))
+                self.levels.append(min(1, max(0, (power + 45) / 30)))
                 if self.levels.count > 160 {
                     self.levels.removeFirst(self.levels.count - 160)
                 }
+                self.lastLevelDate = .now
+                // Sleep until a fixed deadline so samples arrive at a steady cadence for the scrolling waveform.
+                deadline += .seconds(Self.meteringInterval)
                 do {
-                    try await Task.sleep(for: .milliseconds(50))
+                    try await Task.sleep(until: deadline, clock: .continuous)
                 } catch {
                     return
                 }

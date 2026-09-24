@@ -46,10 +46,13 @@ struct ContentView: View {
             }
 
             HStack {
-                if session.voiceInput.phase == .recording {
-                    AudioWaveformView(levels: session.voiceInput.levels)
-                        .frame(maxWidth: .infinity)
-                        .frame(height: 24)
+                if isRecording {
+                    AudioWaveformView(
+                        levels: session.voiceInput.levels,
+                        lastLevelDate: session.voiceInput.lastLevelDate
+                    )
+                    .frame(maxWidth: .infinity)
+                    .frame(height: 24)
                 } else if session.voiceInput.isActive {
                     HStack(spacing: 8) {
                         ProgressView()
@@ -67,31 +70,45 @@ struct ContentView: View {
                     ProgressView()
                         .controlSize(.small)
                 }
-                if session.isTranslationButtonVisible && !session.voiceInput.isActive {
-                    Button("Translate") {
-                        session.translate()
-                    }
-                    .disabled(!session.canTranslate)
-                }
                 if session.isVoiceInputAvailable || session.voiceInput.isActive {
                     Button {
                         session.toggleVoiceInput()
                     } label: {
-                        Image(systemName: session.voiceInput.phase == .recording ? "stop.fill" : "mic.fill")
-                            .foregroundStyle(session.voiceInput.phase == .recording ? Color.red : Color.primary)
-                            .frame(width: 24, height: 24)
-                            .contentShape(Rectangle())
+                        ZStack {
+                            Image(systemName: "mic.fill")
+                                .foregroundStyle(Color.primary)
+                                .scaleEffect(isRecording ? 0.01 : 1)
+                                .opacity(isRecording ? 0 : 1)
+                            Image(systemName: "stop.fill")
+                                .foregroundStyle(Color.red)
+                                .scaleEffect(isRecording ? 1 : 0.01)
+                                .opacity(isRecording ? 1 : 0)
+                        }
+                        .frame(width: 24, height: 24)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .accessibilityLabel(session.voiceInput.phase == .recording ? "Stop and Transcribe" : "Start Voice Input")
-                    .help(session.voiceInput.phase == .recording ? "Stop and transcribe recording (Esc to cancel)" : "Start voice input")
-                    .disabled(!session.canStartVoiceInput && session.voiceInput.phase != .recording)
+                    .accessibilityLabel(isRecording ? "Stop and Transcribe" : "Start Voice Input")
+                    .help(isRecording ? "Stop and transcribe recording (Esc to cancel)" : "Start voice input")
+                    .disabled(!session.canStartVoiceInput && !isRecording)
                 }
-                Button(session.primaryButtonTitle) {
-                    session.performPrimaryAction()
+                if !isRecording {
+                    Group {
+                        if session.isTranslationButtonVisible && !session.voiceInput.isActive {
+                            Button("Translate") {
+                                session.translate()
+                            }
+                            .disabled(!session.canTranslate)
+                        }
+                        Button(session.primaryButtonTitle) {
+                            session.performPrimaryAction()
+                        }
+                        .disabled(!session.canPerformPrimaryAction)
+                    }
+                    .transition(.opacity.animation(.spring(duration: 0.15)))
                 }
-                .disabled(!session.canPerformPrimaryAction)
             }
+            .animation(.spring(duration: 0.3, bounce: 0.15), value: session.voiceInput.phase)
         }
         .padding(16)
         .padding(.top, 8)
@@ -124,6 +141,10 @@ struct ContentView: View {
         .onExitCommand {
             session.handleEscape()
         }
+    }
+
+    private var isRecording: Bool {
+        session.voiceInput.phase == .recording
     }
 
     @ContentBuilder
@@ -218,26 +239,46 @@ struct ContentView: View {
 
 private struct AudioWaveformView: View {
     let levels: [Float]
+    let lastLevelDate: Date
+
+    private let spacing: CGFloat = 5
+    private let barWidth: CGFloat = 2
+    private let edgeFadeWidth: CGFloat = 12
+    private let growthSpring = Spring(duration: 0.2, bounce: 0.2)
+    private let shrinkSpring = Spring(duration: 0.2)
 
     var body: some View {
-        Canvas { context, size in
-            let spacing: CGFloat = 5
-            let count = max(1, Int(size.width / spacing))
-            let visibleLevels = Array(levels.suffix(count))
-            let leadingCount = count - visibleLevels.count
-            for index in 0..<count {
-                let level = index < leadingCount ? 0 : CGFloat(visibleLevels[index - leadingCount])
-                let height = max(2, level * size.height)
-                let rect = CGRect(
-                    x: CGFloat(index) * spacing,
-                    y: (size.height - height) / 2,
-                    width: 2,
-                    height: height
-                )
-                context.fill(
-                    Path(roundedRect: rect, cornerRadius: 1),
-                    with: .color(.white)
-                )
+        TimelineView(.animation) { timeline in
+            Canvas { context, size in
+                // Fraction of the metering interval elapsed since the newest sample, used to
+                // scroll bars continuously between samples instead of stepping once per sample.
+                let elapsed = timeline.date.timeIntervalSince(lastLevelDate) / VoiceInput.meteringInterval
+                let progress = CGFloat(min(1, max(0, elapsed)))
+                let slotCount = Int(size.width / spacing) + 2
+                for slot in 0..<slotCount {
+                    let age = CGFloat(slot) + progress
+                    let x = size.width - barWidth - age * spacing
+                    guard x > 0 else { break }
+                    // Sample springs at the bar's age for the grow-in, and at its progress through
+                    // the edge region for the shrink-out, so both follow spring curves.
+                    let growthTime = Double(age) * VoiceInput.meteringInterval
+                    let growth: CGFloat = growthSpring.value(target: 1, time: growthTime)
+                    let fadeFraction = Double(max(0, edgeFadeWidth - x) / edgeFadeWidth)
+                    let fadeTime = fadeFraction * shrinkSpring.settlingDuration
+                    let edgeScale = max(0, 1 - shrinkSpring.value(target: CGFloat(1), time: fadeTime))
+                    let sampleIndex = levels.count - 1 - slot
+                    let level = sampleIndex >= 0 ? CGFloat(levels[sampleIndex]) : 0
+                    let fullHeight = max(barWidth, level * size.height)
+                    let height = (barWidth + (fullHeight - barWidth) * growth) * edgeScale
+                    let width = barWidth * edgeScale
+                    let rect = CGRect(
+                        x: x + (barWidth - width) / 2,
+                        y: (size.height - height) / 2,
+                        width: width,
+                        height: height
+                    )
+                    context.fill(Capsule().path(in: rect), with: .style(.primary))
+                }
             }
         }
         .accessibilityLabel("Recording audio. Press Escape to cancel.")
