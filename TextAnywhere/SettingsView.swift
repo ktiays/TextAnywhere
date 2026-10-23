@@ -9,6 +9,7 @@ private enum SettingsPane: Hashable {
 
     case general
     case voiceInput
+    case ocr
     case provider(ProviderIdentifier)
 
     var title: String {
@@ -17,6 +18,8 @@ private enum SettingsPane: Hashable {
             "General"
         case .voiceInput:
             "Voice Input"
+        case .ocr:
+            "OCR"
         case .provider(let identifier):
             Provider.provider(for: identifier).name
         }
@@ -37,6 +40,8 @@ struct SettingsView: View {
                         .tag(SettingsPane.general)
                     Label("Voice Input", systemImage: "mic")
                         .tag(SettingsPane.voiceInput)
+                    Label("OCR", systemImage: "text.viewfinder")
+                        .tag(SettingsPane.ocr)
                 }
 
                 Section("Providers") {
@@ -107,6 +112,8 @@ struct SettingsView: View {
             GeneralSettingsView(controller: controller)
         case .voiceInput:
             VoiceInputSettingsView(settings: controller.settings)
+        case .ocr:
+            OCRSettingsView(controller: controller)
         case .provider(let identifier):
             ProvidersPage(
                 controller: controller,

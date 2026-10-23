@@ -18,6 +18,12 @@ struct GlobalShortcut: Codable, Equatable, Sendable {
         keyDisplayName: "Space"
     )
 
+    static let defaultOCRShortcut = GlobalShortcut(
+        keyCode: UInt32(kVK_ANSI_O),
+        modifiers: UInt32(controlKey | optionKey),
+        keyDisplayName: "O"
+    )
+
     var displayName: String {
         var components: [String] = []
         if modifiers & UInt32(controlKey) != 0 { components.append("⌃") }
@@ -70,9 +76,13 @@ final class GlobalShortcutManager {
     private var eventHandler: EventHandlerRef?
     private var hotKey: EventHotKeyRef?
     private var registeredShortcut: GlobalShortcut?
+    private let identifier: UInt32
     private let action: @MainActor () -> Void
 
-    init(action: @escaping @MainActor () -> Void) {
+    /// Each manager needs a distinct `identifier`, because every manager's handler receives
+    /// the hot key events of the whole application.
+    init(identifier: UInt32, action: @escaping @MainActor () -> Void) {
+        self.identifier = identifier
         self.action = action
     }
 
@@ -93,15 +103,30 @@ final class GlobalShortcutManager {
             )
             let status = InstallEventHandler(
                 GetApplicationEventTarget(),
-                { _, _, userData in
-                    guard let userData else { return OSStatus(eventNotHandledErr) }
+                { _, event, userData in
+                    guard let event, let userData else { return OSStatus(eventNotHandledErr) }
+                    var hotKeyID = EventHotKeyID()
+                    let status = GetEventParameter(
+                        event,
+                        EventParamName(kEventParamDirectObject),
+                        EventParamType(typeEventHotKeyID),
+                        nil,
+                        MemoryLayout<EventHotKeyID>.size,
+                        nil,
+                        &hotKeyID
+                    )
+                    guard status == noErr else { return OSStatus(eventNotHandledErr) }
                     let manager = Unmanaged<GlobalShortcutManager>
                         .fromOpaque(userData)
                         .takeUnretainedValue()
-                    MainActor.assumeIsolated {
+                    return MainActor.assumeIsolated {
+                        guard hotKeyID.signature == GlobalShortcutManager.signature,
+                              hotKeyID.id == manager.identifier else {
+                            return OSStatus(eventNotHandledErr)
+                        }
                         manager.action()
+                        return noErr
                     }
-                    return noErr
                 },
                 1,
                 &eventType,
@@ -112,16 +137,19 @@ final class GlobalShortcutManager {
                 throw GlobalShortcutError.registrationFailed(status)
             }
         }
-        try register(shortcut)
+        try update(shortcut: shortcut)
+    }
+
+    func stop() {
+        guard let hotKey else { return }
+        UnregisterEventHotKey(hotKey)
+        self.hotKey = nil
+        registeredShortcut = nil
     }
 
     func update(shortcut: GlobalShortcut) throws {
         let previousShortcut = registeredShortcut
-        if let hotKey {
-            UnregisterEventHotKey(hotKey)
-            self.hotKey = nil
-            registeredShortcut = nil
-        }
+        stop()
 
         do {
             try register(shortcut)
@@ -134,12 +162,12 @@ final class GlobalShortcutManager {
     }
 
     private func register(_ shortcut: GlobalShortcut) throws {
-        let identifier = EventHotKeyID(signature: Self.signature, id: 1)
+        let hotKeyID = EventHotKeyID(signature: Self.signature, id: identifier)
         var reference: EventHotKeyRef?
         let status = RegisterEventHotKey(
             shortcut.keyCode,
             shortcut.modifiers,
-            identifier,
+            hotKeyID,
             GetApplicationEventTarget(),
             OptionBits(kEventHotKeyExclusive),
             &reference

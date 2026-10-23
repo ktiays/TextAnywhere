@@ -9,13 +9,14 @@ import SwiftUI
 final class PopoverPanelPresenter: NSObject, NSPopoverDelegate {
 
     private var popover: NSPopover?
+    private weak var anchorView: NSView?
     private var fakePositioningView: NSView?
     private var isClosing = false
     private var isPresentedBinding: Binding<Bool>?
 
     func present<Content>(@ViewBuilder content: () -> Content, relativeTo positioningView: NSView, isPresented: Binding<Bool>? = nil) where Content: View {
-        dismiss()
-        isClosing = false
+        tearDown()
+        anchorView = positioningView
         isPresentedBinding = isPresented
 
         let screenSize = positioningView.window?.screen?.visibleFrame.size ?? .zero
@@ -45,26 +46,43 @@ final class PopoverPanelPresenter: NSObject, NSPopoverDelegate {
         self.popover = popover
     }
 
-    func dismiss() {
-        guard let popover = popover, !isClosing else { return }
-        closeWithAnimation(popover)
+    func dismiss(animated: Bool = true) {
+        guard let popover else { return }
+        if animated {
+            guard !isClosing else { return }
+            closeWithAnimation(popover)
+        } else {
+            popover.close()
+        }
     }
 
     // MARK: - NSPopoverDelegate
 
     func popoverShouldClose(_ popover: NSPopover) -> Bool {
         guard !isClosing else { return false }
+        // A click on the anchor toggles the presentation binding by itself. Closing here as well
+        // would let the same click reopen the popover right after it closes.
+        guard !isAnchorEvent(NSApp.currentEvent) else { return false }
         closeWithAnimation(popover)
         return false
     }
 
     func popoverDidClose(_ notification: Notification) {
-        fakePositioningView?.removeFromSuperview()
-        fakePositioningView = nil
-        self.popover = nil
-        isClosing = false
-        isPresentedBinding?.wrappedValue = false
-        isPresentedBinding = nil
+        guard let closedPopover = notification.object as? NSPopover, closedPopover === popover else {
+            return
+        }
+        finishClosing()
+    }
+
+    private func isAnchorEvent(_ event: NSEvent?) -> Bool {
+        guard let event,
+              [.leftMouseDown, .rightMouseDown, .otherMouseDown].contains(event.type),
+              let anchorView,
+              event.window === anchorView.window else {
+            return false
+        }
+        let location = anchorView.convert(event.locationInWindow, from: nil)
+        return anchorView.bounds.contains(location)
     }
 
     private func closeWithAnimation(_ popover: NSPopover) {
@@ -76,12 +94,34 @@ final class PopoverPanelPresenter: NSObject, NSPopoverDelegate {
         NSAnimationContext.runAnimationGroup { context in
             context.duration = 0.15
             window.animator().alphaValue = 0
-        } completionHandler: { [weak self] in
+        } completionHandler: {
             DispatchQueue.main.async {
                 popover.close()
-                self?.isClosing = false
             }
         }
+    }
+
+    /// Closes the current popover immediately without reporting the dismissal through the
+    /// presentation binding, so a replacement can be presented right away.
+    private func tearDown() {
+        guard let popover else { return }
+        self.popover = nil
+        popover.close()
+        fakePositioningView?.removeFromSuperview()
+        fakePositioningView = nil
+        isClosing = false
+        isPresentedBinding = nil
+    }
+
+    private func finishClosing() {
+        fakePositioningView?.removeFromSuperview()
+        fakePositioningView = nil
+        popover = nil
+        anchorView = nil
+        isClosing = false
+        let isPresentedBinding = self.isPresentedBinding
+        self.isPresentedBinding = nil
+        isPresentedBinding?.wrappedValue = false
     }
 }
 
@@ -116,6 +156,9 @@ private struct PopoverPanelModifier<PopoverContent: View>: ViewModifier {
             }
             .onChange(of: anchorView) {
                 updatePresentation()
+            }
+            .onDisappear {
+                presenter.dismiss(animated: false)
             }
     }
 

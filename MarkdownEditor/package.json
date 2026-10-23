@@ -1,0 +1,12 @@
+{
+  "name": "textanywhere-markdown-editor",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Rendered Markdown editor bundled into TextAnywhere as a single HTML file",
+  "type": "module",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node scripts/build.mjs --check",
+    "test": "node --test 'tests/**/*.test.js'"
+  }
+}

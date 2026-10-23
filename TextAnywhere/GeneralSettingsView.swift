@@ -11,69 +11,68 @@ struct GeneralSettingsView: View {
 
     let controller: AppController
 
-    @State private var isLanguageMenuPresented = false
-
     var body: some View {
         Form {
-            LabeledContent("Target Language") {
-                Button {
-                    isLanguageMenuPresented.toggle()
-                } label: {
-                    HStack {
-                        Text(controller.settings.targetLanguage.displayName)
-                        Spacer()
-                        Image(systemName: "chevron.down")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+            Section {
+                HStack {
+                    Text("Global Shortcut")
+                    Spacer()
+                    ShortcutRecorderView(shortcut: controller.settings.shortcut) { shortcut in
+                        try controller.updateShortcut(shortcut)
                     }
-                    .frame(width: 220)
                 }
-                .buttonStyle(.bordered)
-                .popoverPanel(isPresented: $isLanguageMenuPresented) {
-                    LanguageMenuContent(
-                        selectedLanguageCode: Binding(
-                            get: { controller.settings.targetLanguageCode },
-                            set: { controller.settings.targetLanguageCode = $0 }
-                        )
-                    ) {
-                        isLanguageMenuPresented = false
-                    }
-                    .frame(width: 320, height: 300)
-                }
-            }
-
-            HStack {
-                Text("Global Shortcut")
-                Spacer()
-                ShortcutRecorderView(shortcut: controller.settings.shortcut) { shortcut in
-                    try controller.updateShortcut(shortcut)
-                }
-            }
-            Toggle(
-                "Show in Menu Bar",
-                isOn: Binding(
-                    get: { controller.settings.isTrayEnabled },
-                    set: { controller.settings.isTrayEnabled = $0 }
+                Toggle(
+                    "Show in Menu Bar",
+                    isOn: Binding(
+                        get: { controller.settings.isTrayEnabled },
+                        set: { controller.settings.isTrayEnabled = $0 }
+                    )
                 )
-            )
+            }
 
             Section {
-                LabeledContent("Accessibility") {
-                    TimelineView(.periodic(from: .now, by: 1)) { _ in
-                        if controller.insertionService.isTrusted {
-                            Label("Granted", systemImage: "checkmark.circle.fill")
-                                .foregroundStyle(.green)
-                        } else {
-                            Button("Grant Access") {
-                                controller.insertionService.requestPermission()
-                            }
-                        }
+                LabeledContent {
+                    LanguagePickerButton(language: languagePair.primary) { code in
+                        controller.settings.setPrimaryLanguageCode(code)
                     }
+                } label: {
+                    Text("Primary Language")
+                    Text("Used when the input language can't be matched.")
                 }
+
+                LabeledContent {
+                    LanguagePickerButton(language: languagePair.secondary) { code in
+                        controller.settings.setSecondaryLanguageCode(code)
+                    }
+                } label: {
+                    Text("Secondary Language")
+                }
+
+                LabeledContent("Target Language") {
+                    Picker(
+                        "Target Language",
+                        selection: Binding(
+                            get: { controller.settings.targetLanguageMode },
+                            set: { controller.settings.targetLanguageMode = $0 }
+                        )
+                    ) {
+                        Text("Automatic")
+                            .tag(TargetLanguageMode.automatic)
+                        Divider()
+                        Text(languagePair.primary.displayName)
+                            .tag(TargetLanguageMode.primary)
+                        Text(languagePair.secondary.displayName)
+                            .tag(TargetLanguageMode.secondary)
+                    }
+                    .labelsHidden()
+                    .frame(width: 220, alignment: .trailing)
+                }
+            } header: {
+                Text("Translation")
             } footer: {
-                Text("Accessibility access lets TextAnywhere insert a translation into the selected app. Without it, the translation is copied to the clipboard.")
+                Text("Automatic detects the input language. \(languagePair.primary.displayName) is translated into \(languagePair.secondary.displayName), and everything else, including text that can't be recognized, into \(languagePair.primary.displayName). You can also switch the target in the editor.")
             }
-            
+
             Section {
                 Toggle(
                     "Show Translation Button",
@@ -104,76 +103,91 @@ struct GeneralSettingsView: View {
             } footer: {
                 Text("⌘ + Enter triggers the primary button.")
             }
-        }
-        .fontDesign(.rounded)
-    }
-}
 
-private struct LanguageMenuContent: View {
-
-    @Binding var selectedLanguageCode: String
-    let onSelect: () -> Void
-
-    @State private var searchText = ""
-    @State private var highlightedLanguageCode: String?
-
-    private let languages = TranslationLanguage.catalog
-
-    private var filteredLanguages: [TranslationLanguage] {
-        guard !searchText.isEmpty else { return languages }
-        return languages.filter {
-            $0.displayName.localizedCaseInsensitiveContains(searchText)
-                || $0.code.localizedCaseInsensitiveContains(searchText)
-        }
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            TextField("Search Languages", text: $searchText)
-                .textFieldStyle(.plain)
-                .padding()
-
-            Divider()
-
-            ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(filteredLanguages) { language in
-                        HStack {
-                            Text(language.displayName)
-                            Spacer()
-                            Text(language.code)
-                                .foregroundStyle(.secondary)
-                            if selectedLanguageCode == language.code {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(.tint)
+            Section {
+                LabeledContent("Accessibility") {
+                    TimelineView(.periodic(from: .now, by: 1)) { _ in
+                        if controller.insertionService.isTrusted {
+                            Label("Granted", systemImage: "checkmark.circle.fill")
+                                .foregroundStyle(.green)
+                        } else {
+                            Button("Grant Access") {
+                                controller.insertionService.requestPermission()
                             }
-                        }
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .background {
-                            if highlightedLanguageCode == language.code {
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(.tint.opacity(0.1))
-                            }
-                        }
-                        .contentShape(Rectangle())
-                        .onHover { isHovered in
-                            highlightedLanguageCode = isHovered ? language.code : nil
-                        }
-                        .onTapGesture {
-                            selectedLanguageCode = language.code
-                            onSelect()
                         }
                     }
                 }
-                .padding(8)
+            } header: {
+                Text("Permissions")
+            } footer: {
+                Text("Accessibility access lets TextAnywhere insert a translation into the selected app. Without it, the translation is copied to the clipboard.")
             }
         }
         .fontDesign(.rounded)
     }
+
+    private var languagePair: LanguagePair {
+        controller.settings.languagePair
+    }
 }
 
-private struct ShortcutRecorderView: View {
+private struct LanguagePickerButton: View {
+
+    let language: TranslationLanguage
+    let onSelect: (String) -> Void
+
+    @State private var isMenuPresented = false
+
+    var body: some View {
+        Button {
+            isMenuPresented.toggle()
+        } label: {
+            HStack {
+                Text(language.displayName)
+                Spacer()
+                Image(systemName: "chevron.down")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            .frame(width: 220)
+        }
+        .buttonStyle(.bordered)
+        .popoverPanel(isPresented: $isMenuPresented) {
+            SearchableMenu(
+                items: TranslationLanguage.menuItems,
+                selectedID: language.code,
+                searchPrompt: "Search Languages"
+            ) { code in
+                onSelect(code)
+                isMenuPresented = false
+            } onCancel: {
+                isMenuPresented = false
+            }
+            .frame(width: 320, height: 300)
+        }
+    }
+}
+
+private extension TranslationLanguage {
+
+    static let menuItems: [SearchableMenuItem] = {
+        let englishLocale = Locale(identifier: "en")
+        return catalog.map { language in
+            SearchableMenuItem(
+                id: language.code,
+                title: language.displayName,
+                detail: language.code,
+                searchTerms: [
+                    language.code,
+                    englishLocale.localizedString(forLanguageCode: language.code),
+                    Locale(identifier: language.code).localizedString(forLanguageCode: language.code),
+                ].compactMap(\.self)
+            )
+        }
+    }()
+}
+
+struct ShortcutRecorderView: View {
 
     let shortcut: GlobalShortcut
     let onChange: (GlobalShortcut) throws -> Void

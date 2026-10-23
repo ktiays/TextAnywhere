@@ -18,15 +18,21 @@ final class TranslationSession {
 
     let voiceInput = VoiceInput()
     private var hasBailianAPIKey = false
+    private var hasOCRProviderAPIKey = false
 
     var draft = "" {
         didSet {
-            if case .message(_, isError: true) = state, draft != oldValue {
+            guard draft != oldValue else { return }
+            detectedLanguageCode = LanguageDetector.languageCode(of: draft)
+            if case .message(_, isError: true) = state {
                 state = .idle
             }
         }
     }
+    private(set) var detectedLanguageCode: String?
     private(set) var state: State = .idle
+    private(set) var isRecognizingText = false
+    var isMarkdownRenderingEnabled = false
     private(set) var selectedTarget: TargetApplication?
     private(set) var focusRequestID = 0
 
@@ -40,9 +46,11 @@ final class TranslationSession {
     private var onSuccessfulInsertion: (@MainActor () -> Void)?
     private var onInsertionFailed: (@MainActor () -> Void)?
     private var onDismiss: (@MainActor () -> Void)?
+    private var onScreenCaptureRequested: (@MainActor () -> Void)?
 
     private var capturedTarget: CapturedTextTarget?
     private var actionTask: Task<Void, Never>?
+    private var recognitionTask: Task<Void, Never>?
 
     init(
         settings: AppSettings,
@@ -64,8 +72,27 @@ final class TranslationSession {
         applicationTracker.runningApplications
     }
 
+    var languagePair: LanguagePair {
+        settings.languagePair
+    }
+
+    var targetLanguageMode: TargetLanguageMode {
+        settings.targetLanguageMode
+    }
+
+    var detectedLanguage: TranslationLanguage? {
+        detectedLanguageCode.map(TranslationLanguage.language(for:))
+    }
+
     var targetLanguage: TranslationLanguage {
-        settings.targetLanguage
+        languagePair.targetLanguage(
+            for: settings.targetLanguageMode,
+            detectedLanguageCode: detectedLanguageCode
+        )
+    }
+
+    func selectTargetLanguageMode(_ mode: TargetLanguageMode) {
+        settings.targetLanguageMode = mode
     }
 
     var selectedProvider: Provider {
@@ -96,12 +123,16 @@ final class TranslationSession {
         settings.isTranslationButtonVisible
     }
 
+    var isEditable: Bool {
+        !isTranslating && !voiceInput.isActive && !isRecognizingText
+    }
+
     var canPaste: Bool {
-        hasDraft && actionTask == nil && !voiceInput.isActive
+        hasDraft && !isBusy
     }
 
     var canTranslate: Bool {
-        hasDraft && hasAvailableProvider && actionTask == nil && !voiceInput.isActive
+        hasDraft && hasAvailableProvider && !isBusy
     }
 
     var canPerformPrimaryAction: Bool {
@@ -117,7 +148,8 @@ final class TranslationSession {
     }
 
     func prepareForPresentation() {
-        refreshVoiceInputAvailability()
+        isMarkdownRenderingEnabled = false
+        refreshCredentialAvailability()
         applicationTracker.refreshRunningApplications()
         if let application = applicationTracker.preferredTargetApplication() {
             applicationTracker.refreshRememberedWindow(for: application)
@@ -132,12 +164,14 @@ final class TranslationSession {
         onInsertionStarted: @escaping @MainActor () -> Void,
         onSuccessfulInsertion: @escaping @MainActor () -> Void,
         onInsertionFailed: @escaping @MainActor () -> Void,
-        onDismiss: @escaping @MainActor () -> Void
+        onDismiss: @escaping @MainActor () -> Void,
+        onScreenCaptureRequested: @escaping @MainActor () -> Void
     ) {
         self.onInsertionStarted = onInsertionStarted
         self.onSuccessfulInsertion = onSuccessfulInsertion
         self.onInsertionFailed = onInsertionFailed
         self.onDismiss = onDismiss
+        self.onScreenCaptureRequested = onScreenCaptureRequested
     }
 
     func requestEditorFocus() {
@@ -172,7 +206,7 @@ final class TranslationSession {
     }
 
     func paste() {
-        guard actionTask == nil, !voiceInput.isActive else { return }
+        guard !isBusy else { return }
 
         do {
             let sourceText = try sourceText()
@@ -203,14 +237,17 @@ final class TranslationSession {
         settings.isProviderEnabled(.bailian) && hasBailianAPIKey
     }
 
-    func refreshVoiceInputAvailability() {
-        let key = (try? credentials.apiKey(for: .bailian)) ?? ""
-        hasBailianAPIKey = !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    func refreshCredentialAvailability() {
+        hasBailianAPIKey = hasAPIKey(for: .bailian)
+        hasOCRProviderAPIKey = hasAPIKey(for: settings.ocrModel.provider.id)
     }
 
     func handleEscape() {
         if voiceInput.isActive {
             voiceInput.cancel()
+            requestEditorFocus()
+        } else if isRecognizingText {
+            cancelTextRecognition()
             requestEditorFocus()
         } else {
             dismiss()
@@ -218,7 +255,101 @@ final class TranslationSession {
     }
 
     var canStartVoiceInput: Bool {
-        isVoiceInputAvailable && actionTask == nil && !voiceInput.isActive
+        isVoiceInputAvailable && !isBusy
+    }
+
+    var isOCRAvailable: Bool {
+        settings.isOCREnabled
+            && settings.isProviderEnabled(settings.ocrModel.provider.id)
+            && hasOCRProviderAPIKey
+    }
+
+    var isScreenCaptureOCRAvailable: Bool {
+        isOCRAvailable && settings.isOCRScreenCaptureEnabled
+    }
+
+    var isPasteAndDropOCRAvailable: Bool {
+        isOCRAvailable && settings.isOCRPasteAndDropEnabled
+    }
+
+    var isFilePickerOCRAvailable: Bool {
+        isOCRAvailable && settings.isOCRFilePickerEnabled
+    }
+
+    var canStartTextRecognition: Bool {
+        isOCRAvailable && !isBusy
+    }
+
+    func requestScreenCapture() {
+        guard canStartTextRecognition else { return }
+        onScreenCaptureRequested?()
+    }
+
+    /// Recognizes an image or PDF on the general pasteboard instead of pasting it.
+    /// Returns `false` when the pasteboard holds regular text that should paste as usual.
+    func recognizePastedContent() -> Bool {
+        guard isPasteAndDropOCRAvailable, let source = OCRSource(pasteboard: .general) else {
+            return false
+        }
+        recognizeText(from: source)
+        return true
+    }
+
+    func recognizeText(from source: OCRSource) {
+        guard !isBusy else { return }
+        do {
+            let model = settings.ocrModel
+            let configuration = try OCRConfiguration(
+                baseURL: settings.baseURL(for: model.provider.id),
+                model: model,
+                apiKey: credentials.apiKey(for: model.provider.id)
+            )
+            state = .idle
+            isRecognizingText = true
+            recognitionTask = Task { [weak self] in
+                let result: Result<String, any Error>
+                do {
+                    let document = try await Task.detached(priority: .userInitiated) {
+                        try OCRDocument(source: source)
+                    }.value
+                    result = .success(
+                        try await OCRClient().recognizeText(in: document, configuration: configuration)
+                    )
+                } catch {
+                    result = .failure(error)
+                }
+                guard let self, !Task.isCancelled else { return }
+                finishTextRecognition()
+                switch result {
+                case .success(let text):
+                    draft += draft.isEmpty ? text : "\n" + text
+                    requestEditorFocus()
+                case .failure(let error):
+                    showError(error.localizedDescription)
+                }
+            }
+        } catch {
+            showError(error.localizedDescription)
+        }
+    }
+
+    private func cancelTextRecognition() {
+        recognitionTask?.cancel()
+        finishTextRecognition()
+    }
+
+    private func finishTextRecognition() {
+        recognitionTask = nil
+        isRecognizingText = false
+    }
+
+    private var isBusy: Bool {
+        actionTask != nil || voiceInput.isActive || isRecognizingText
+    }
+
+    private func hasAPIKey(for providerID: ProviderIdentifier) -> Bool {
+        let key = (try? credentials.apiKey(for: providerID)) ?? ""
+        return !key.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     func toggleVoiceInput() {
@@ -253,6 +384,7 @@ final class TranslationSession {
 
     func cancel() {
         voiceInput.cancel()
+        cancelTextRecognition()
         actionTask?.cancel()
         actionTask = nil
         if isTranslating {
@@ -305,7 +437,7 @@ final class TranslationSession {
     }
 
     private func translate(thenPaste: Bool) {
-        guard actionTask == nil, !voiceInput.isActive else { return }
+        guard !isBusy else { return }
 
         do {
             let providerID = settings.selectedProviderID
@@ -319,7 +451,7 @@ final class TranslationSession {
             let sourceText = try sourceText()
             let target: CapturedTextTarget? = thenPaste ? try insertionTarget() : nil
             state = .translating
-            let targetLanguage = settings.targetLanguage
+            let targetLanguage = self.targetLanguage
             actionTask = Task { [weak self] in
                 guard let self else { return }
                 do {

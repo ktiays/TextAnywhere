@@ -78,10 +78,20 @@ struct ProvidersPage: View {
                         .disabled(models.isEmpty)
                         .help("Choose from available models")
                         .popoverPanel(isPresented: $isModelMenuPresented) {
-                            ModelMenuContent(
-                                models: models,
-                                selectedModelID: modelIDBinding
-                            ) {
+                            SearchableMenu(
+                                items: models.map { model in
+                                    SearchableMenuItem(
+                                        id: model.id,
+                                        title: model.displayName,
+                                        searchTerms: [model.id]
+                                    )
+                                },
+                                selectedID: modelIDBinding.wrappedValue,
+                                searchPrompt: "Search Models"
+                            ) { modelID in
+                                modelIDBinding.wrappedValue = modelID
+                                isModelMenuPresented = false
+                            } onCancel: {
                                 isModelMenuPresented = false
                             }
                             .frame(width: 340, height: 280)
@@ -139,7 +149,7 @@ struct ProvidersPage: View {
                 apiKey = newValue
                 do {
                     try controller.credentials.setAPIKey(newValue, for: provider.id)
-                    controller.session.refreshVoiceInputAvailability()
+                    controller.session.refreshCredentialAvailability()
                     statusMessage = nil
                     isStatusError = false
                 } catch {
@@ -225,58 +235,6 @@ struct ProvidersPage: View {
                 isStatusError = true
             }
             isRefreshingModels = false
-        }
-    }
-}
-
-private struct ModelMenuContent: View {
-
-    let models: [ModelDescriptor]
-    @Binding var selectedModelID: String
-    let onSelect: () -> Void
-
-    @State private var searchText = ""
-
-    private var filteredModels: [ModelDescriptor] {
-        guard !searchText.isEmpty else { return models }
-        return models.filter {
-            $0.id.localizedCaseInsensitiveContains(searchText)
-                || $0.displayName.localizedCaseInsensitiveContains(searchText)
-        }
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            TextField("Search Models", text: $searchText)
-                .textFieldStyle(.plain)
-                .padding()
-
-            Divider()
-
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 0) {
-                    ForEach(filteredModels) { model in
-                        HStack {
-                            Text(model.displayName)
-                                .lineLimit(1)
-                            Spacer()
-                            if selectedModelID == model.id {
-                                Image(systemName: "checkmark")
-                                    .foregroundStyle(.tint)
-                            }
-                        }
-                        .frame(maxWidth: .infinity)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 8)
-                        .contentShape(Rectangle())
-                        .onTapGesture {
-                            selectedModelID = model.id
-                            onSelect()
-                        }
-                    }
-                }
-                .padding(8)
-            }
         }
     }
 }

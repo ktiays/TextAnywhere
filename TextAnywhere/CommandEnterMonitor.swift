@@ -98,8 +98,8 @@ struct CommandEnterMonitor: NSViewRepresentable {
         }
 
         private func hasMarkedText(in window: NSWindow?) -> Bool {
-            guard let textView = window?.firstResponder as? NSTextView else { return false }
-            return textView.hasMarkedText()
+            guard let textInput = window?.firstResponder as? NSTextInputClient else { return false }
+            return textInput.hasMarkedText()
         }
     }
 }

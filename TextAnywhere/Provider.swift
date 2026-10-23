@@ -48,6 +48,8 @@ struct Provider: Identifiable, Hashable, Equatable, Sendable {
 
     static let deepSeek: Self = .init(id: .deepSeek, name: "DeepSeek", iconAssetName: "deepseek")
 
+    static let bigModel: Self = .init(id: .bigModel, name: "BigModel", iconAssetName: "bigmodel")
+
     static let ollama: Self = .init(id: .ollama, name: "Ollama", iconAssetName: "ollama")
 
     static let presets: [Provider] = [
@@ -57,6 +59,7 @@ struct Provider: Identifiable, Hashable, Equatable, Sendable {
         .xAI,
         .bailian,
         .deepSeek,
+        .bigModel,
         .ollama,
     ]
 
@@ -82,6 +85,8 @@ struct Provider: Identifiable, Hashable, Equatable, Sendable {
             "https://dashscope.aliyuncs.com/compatible-mode/v1"
         case .deepSeek:
             "https://api.deepseek.com"
+        case .bigModel:
+            "https://open.bigmodel.cn/api/paas/v4"
         case .ollama:
             "http://localhost:11434"
         default:
@@ -117,6 +122,8 @@ struct ProviderIdentifier: RawRepresentable, ExpressibleByStringLiteral, Hashabl
     static let bailian: Self = "Bailian"
 
     static let deepSeek: Self = "DeepSeek"
+
+    static let bigModel: Self = "BigModel"
 
     static let ollama: Self = "Ollama"
 }

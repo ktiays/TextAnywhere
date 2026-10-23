@@ -5,6 +5,7 @@
 
 import AppKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct ContentView: View {
 
@@ -12,28 +13,58 @@ struct ContentView: View {
 
     @FocusState private var editorFocused: Bool
     @State private var editorHasMarkedText = false
+    @State private var isImageDropTargeted = false
+    @State private var isFileImporterPresented = false
+    @State private var markdownEditor = MarkdownEditorController()
 
     var body: some View {
         VStack(spacing: 12) {
             HStack(spacing: 10) {
                 targetApplicationMenu
                 Spacer()
-                Label(session.targetLanguage.displayName, systemImage: "globe")
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
+                markdownRenderingToggle
+                targetLanguageMenu
             }
 
             ZStack(alignment: .topLeading) {
-                TextEditor(text: $session.draft)
-                    .font(.body)
-                    .scrollContentBackground(.hidden)
-                    .focused($editorFocused)
-                    .disabled(session.isTranslating || session.voiceInput.isActive)
+                if session.isMarkdownRenderingEnabled {
+                    MarkdownEditorView(
+                        controller: markdownEditor,
+                        markdown: session.draft,
+                        placeholder: placeholder,
+                        isEditable: session.isEditable
+                    ) { markdown in
+                        session.draft = markdown
+                    }
+                } else {
+                    TextEditor(text: $session.draft)
+                        .font(.body)
+                        .scrollContentBackground(.hidden)
+                        .focused($editorFocused)
+                        .disabled(!session.isEditable)
+                }
 
-                if session.draft.isEmpty && !editorHasMarkedText {
-                    Text("Type text to translate…")
+                if !session.isMarkdownRenderingEnabled && session.draft.isEmpty && !editorHasMarkedText {
+                    Text(placeholder)
                         .foregroundStyle(.tertiary)
                         .padding(.horizontal, 5)
+                        .allowsHitTesting(false)
+                }
+            }
+            .overlay {
+                if session.isPasteAndDropOCRAvailable {
+                    ImageDropTarget { isTargeted in
+                        isImageDropTargeted = isTargeted
+                    } onDrop: { source in
+                        session.recognizeText(from: source)
+                    }
+                }
+            }
+            .overlay {
+                if isImageDropTargeted {
+                    RoundedRectangle(cornerRadius: 10)
+                        .strokeBorder(.tint, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+                        .background(.tint.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
                         .allowsHitTesting(false)
                 }
             }
@@ -53,11 +84,11 @@ struct ContentView: View {
                     )
                     .frame(maxWidth: .infinity)
                     .frame(height: 24)
-                } else if session.voiceInput.isActive {
+                } else if session.voiceInput.isActive || session.isRecognizingText {
                     HStack(spacing: 8) {
                         ProgressView()
                             .controlSize(.small)
-                        Text(session.voiceInput.phase == .transcribing ? "Transcribing…" : "Requesting microphone access…")
+                        Text(activityDescription)
                             .font(.caption)
                             .foregroundStyle(.secondary)
                     }
@@ -69,6 +100,20 @@ struct ContentView: View {
                 if session.isTranslating {
                     ProgressView()
                         .controlSize(.small)
+                }
+                if session.isScreenCaptureOCRAvailable && !session.voiceInput.isActive {
+                    iconButton(systemImage: "text.viewfinder", label: "Recognize Text on Screen") {
+                        session.requestScreenCapture()
+                    }
+                    .help("Select an area of the screen to recognize its text")
+                    .disabled(!session.canStartTextRecognition)
+                }
+                if session.isFilePickerOCRAvailable && !session.voiceInput.isActive {
+                    iconButton(systemImage: "photo.on.rectangle", label: "Recognize Text in File") {
+                        isFileImporterPresented = true
+                    }
+                    .help("Choose an image or PDF to recognize its text")
+                    .disabled(!session.canStartTextRecognition)
                 }
                 if session.isVoiceInputAvailable || session.voiceInput.isActive {
                     Button {
@@ -118,16 +163,43 @@ struct ContentView: View {
             editorFocused = true
         }
         .onChange(of: session.focusRequestID) {
-            editorFocused = true
+            if session.isMarkdownRenderingEnabled {
+                markdownEditor.focus()
+            } else {
+                editorFocused = true
+            }
+        }
+        .onChange(of: session.isMarkdownRenderingEnabled) {
+            if !session.isMarkdownRenderingEnabled {
+                editorFocused = true
+            }
         }
         .background {
             CommandEnterMonitor(
                 isEnabled: session.canPerformPrimaryAction,
-                onEscape: session.voiceInput.isActive ? { session.handleEscape() } : nil
+                onEscape: session.voiceInput.isActive || session.isRecognizingText || session.isMarkdownRenderingEnabled
+                    ? { session.handleEscape() }
+                    : nil
             ) {
                 session.performPrimaryAction()
             }
             .allowsHitTesting(false)
+        }
+        .background {
+            if session.isPasteAndDropOCRAvailable {
+                ImagePasteMonitor {
+                    session.recognizePastedContent()
+                }
+                .allowsHitTesting(false)
+            }
+        }
+        .fileImporter(isPresented: $isFileImporterPresented, allowedContentTypes: [.image, .pdf]) { result in
+            switch result {
+            case .success(let url):
+                session.recognizeText(from: .fileURL(url))
+            case .failure(let error):
+                session.showError(error.localizedDescription)
+            }
         }
         .task {
             for await notification in NotificationCenter.default.notifications(named: NSTextView.didChangeSelectionNotification) {
@@ -145,6 +217,100 @@ struct ContentView: View {
 
     private var isRecording: Bool {
         session.voiceInput.phase == .recording
+    }
+
+    private var placeholder: String {
+        session.isPasteAndDropOCRAvailable ? "Type text, or paste or drop an image…" : "Type text to translate…"
+    }
+
+    private var markdownRenderingToggle: some View {
+        Button {
+            session.isMarkdownRenderingEnabled.toggle()
+        } label: {
+            Image(systemName: session.isMarkdownRenderingEnabled ? "doc.richtext.fill" : "doc.richtext")
+                .foregroundStyle(session.isMarkdownRenderingEnabled ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("Render Markdown")
+        .accessibilityAddTraits(session.isMarkdownRenderingEnabled ? .isSelected : [])
+        .help(session.isMarkdownRenderingEnabled ? "Edit as plain text" : "Edit with Markdown rendering")
+    }
+
+    private var activityDescription: String {
+        if session.isRecognizingText {
+            "Recognizing text…"
+        } else if session.voiceInput.phase == .transcribing {
+            "Transcribing…"
+        } else {
+            "Requesting microphone access…"
+        }
+    }
+
+    private func iconButton(
+        systemImage: String,
+        label: String,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .foregroundStyle(Color.primary)
+                .frame(width: 24, height: 24)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
+    @ContentBuilder
+    private var targetLanguageMenu: some View {
+        Menu {
+            ForEach(TargetLanguageMode.allCases) { mode in
+                Button {
+                    session.selectTargetLanguageMode(mode)
+                } label: {
+                    HStack {
+                        Text(title(for: mode))
+                        if session.targetLanguageMode == mode {
+                            Image(systemName: "checkmark")
+                        }
+                    }
+                }
+                if mode == .automatic {
+                    Divider()
+                }
+            }
+        } label: {
+            HStack(spacing: 4) {
+                Image(systemName: "globe")
+                if session.targetLanguageMode == .automatic {
+                    Text(session.detectedLanguage?.displayName ?? "Auto")
+                    Image(systemName: "arrow.right")
+                        .imageScale(.small)
+                }
+                Text(session.targetLanguage.displayName)
+                Image(systemName: "chevron.up.chevron.down")
+                    .font(.caption2)
+            }
+            .lineLimit(1)
+            .foregroundStyle(.secondary)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .fixedSize()
+        .help("Choose the target language")
+    }
+
+    private func title(for mode: TargetLanguageMode) -> String {
+        switch mode {
+        case .automatic:
+            "Automatic (\(session.languagePair.primary.displayName) ⇄ \(session.languagePair.secondary.displayName))"
+        case .primary:
+            session.languagePair.primary.displayName
+        case .secondary:
+            session.languagePair.secondary.displayName
+        }
     }
 
     @ContentBuilder
@@ -167,26 +333,33 @@ struct ContentView: View {
                 }
             }
         } label: {
-            HStack(spacing: 4) {
+            Group {
                 if session.enabledProviders.isEmpty {
-                    Text("No Provider Enabled")
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .resizable()
+                        .aspectRatio(contentMode: .fit)
+                        .foregroundStyle(Color.red)
                 } else {
-                    HStack(spacing: 5) {
-                        Text(session.selectedProvider.name)
-                        Circle()
-                            .frame(width: 3, height: 3)
-                        Text(session.selectedModelID)
-                    }
+                    session.selectedProvider.iconView()
                 }
-                Image(systemName: "chevron.up.chevron.down")
-                    .font(.caption2)
             }
-            .font(.caption)
-            .foregroundStyle(session.enabledProviders.isEmpty ? Color.red : Color.secondary)
+            .frame(width: 16, height: 16)
         }
         .menuStyle(.button)
-        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .buttonStyle(.glass)
+        .buttonBorderShape(.circle)
         .fixedSize()
+        .accessibilityLabel(providerMenuDescription)
+        .help(providerMenuDescription)
+    }
+
+    private var providerMenuDescription: String {
+        if session.enabledProviders.isEmpty {
+            "No Provider Enabled"
+        } else {
+            "\(session.selectedProvider.name) · \(session.selectedModelID)"
+        }
     }
 
     @ContentBuilder

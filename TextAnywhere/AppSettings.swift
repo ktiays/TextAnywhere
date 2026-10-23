@@ -17,11 +17,21 @@ final class AppSettings {
     private enum Key {
         static let selectedProvider = "selectedProvider"
         static let enabledProviders = "enabledProviders"
-        static let targetLanguage = "targetLanguage"
+        static let legacyTargetLanguage = "targetLanguage"
+        static let primaryLanguage = "primaryLanguage"
+        static let secondaryLanguage = "secondaryLanguage"
+        static let targetLanguageMode = "targetLanguageMode"
         static let shortcut = "globalShortcut"
         static let trayEnabled = "trayEnabled"
         static let translationButtonVisible = "translationButtonVisible"
         static let primaryButtonAction = "primaryButtonAction"
+        static let ocrEnabled = "ocrEnabled"
+        static let ocrModel = "ocrModel"
+        static let ocrScreenCaptureEnabled = "ocrScreenCaptureEnabled"
+        static let ocrPasteAndDropEnabled = "ocrPasteAndDropEnabled"
+        static let ocrFilePickerEnabled = "ocrFilePickerEnabled"
+        static let ocrShortcutEnabled = "ocrShortcutEnabled"
+        static let ocrShortcut = "ocrShortcut"
 
         static func baseURL(_ providerID: ProviderIdentifier) -> String {
             "provider.\(providerID.rawValue).baseURL"
@@ -61,9 +71,21 @@ final class AppSettings {
         }
     }
 
-    var targetLanguageCode: String {
+    private(set) var primaryLanguageCode: String {
         didSet {
-            defaults.set(targetLanguageCode, forKey: Key.targetLanguage)
+            defaults.set(primaryLanguageCode, forKey: Key.primaryLanguage)
+        }
+    }
+
+    private(set) var secondaryLanguageCode: String {
+        didSet {
+            defaults.set(secondaryLanguageCode, forKey: Key.secondaryLanguage)
+        }
+    }
+
+    var targetLanguageMode: TargetLanguageMode {
+        didSet {
+            defaults.set(targetLanguageMode.rawValue, forKey: Key.targetLanguageMode)
         }
     }
 
@@ -98,6 +120,50 @@ final class AppSettings {
         }
     }
 
+    var isOCREnabled: Bool {
+        didSet {
+            defaults.set(isOCREnabled, forKey: Key.ocrEnabled)
+        }
+    }
+
+    var ocrModel: OCRModel {
+        didSet {
+            defaults.set(ocrModel.rawValue, forKey: Key.ocrModel)
+        }
+    }
+
+    var isOCRScreenCaptureEnabled: Bool {
+        didSet {
+            defaults.set(isOCRScreenCaptureEnabled, forKey: Key.ocrScreenCaptureEnabled)
+        }
+    }
+
+    var isOCRPasteAndDropEnabled: Bool {
+        didSet {
+            defaults.set(isOCRPasteAndDropEnabled, forKey: Key.ocrPasteAndDropEnabled)
+        }
+    }
+
+    var isOCRFilePickerEnabled: Bool {
+        didSet {
+            defaults.set(isOCRFilePickerEnabled, forKey: Key.ocrFilePickerEnabled)
+        }
+    }
+
+    var isOCRShortcutEnabled: Bool {
+        didSet {
+            defaults.set(isOCRShortcutEnabled, forKey: Key.ocrShortcutEnabled)
+        }
+    }
+
+    var ocrShortcut: GlobalShortcut {
+        didSet {
+            if let data = try? JSONEncoder().encode(ocrShortcut) {
+                defaults.set(data, forKey: Key.ocrShortcut)
+            }
+        }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         transcriptionModel = defaults.string(forKey: "transcriptionModel") ?? TranscriptionConfiguration.defaultModel
@@ -112,7 +178,15 @@ final class AppSettings {
         } else {
             enabledProviderIDs = [initialProviderID]
         }
-        targetLanguageCode = defaults.string(forKey: Key.targetLanguage) ?? TranslationLanguage.english.code
+        let initialPrimaryLanguageCode = defaults.string(forKey: Key.primaryLanguage)
+            ?? defaults.string(forKey: Key.legacyTargetLanguage)
+            ?? TranslationLanguage.english.code
+        primaryLanguageCode = initialPrimaryLanguageCode
+        secondaryLanguageCode = defaults.string(forKey: Key.secondaryLanguage)
+            ?? Self.defaultSecondaryLanguageCode(differentFrom: initialPrimaryLanguageCode)
+        targetLanguageMode = defaults.string(forKey: Key.targetLanguageMode)
+            .flatMap(TargetLanguageMode.init(rawValue:))
+            ?? .automatic
 
         if let shortcutData = defaults.data(forKey: Key.shortcut),
            let storedShortcut = try? JSONDecoder().decode(GlobalShortcut.self, from: shortcutData) {
@@ -125,6 +199,20 @@ final class AppSettings {
         primaryButtonAction = defaults.string(forKey: Key.primaryButtonAction)
             .flatMap(EditorAction.init(rawValue:))
             ?? .translateAndPaste
+        isOCREnabled = defaults.object(forKey: Key.ocrEnabled) as? Bool ?? true
+        ocrModel = defaults.string(forKey: Key.ocrModel)
+            .flatMap(OCRModel.init(rawValue:))
+            ?? .glmOCR
+        isOCRScreenCaptureEnabled = defaults.object(forKey: Key.ocrScreenCaptureEnabled) as? Bool ?? true
+        isOCRPasteAndDropEnabled = defaults.object(forKey: Key.ocrPasteAndDropEnabled) as? Bool ?? true
+        isOCRFilePickerEnabled = defaults.object(forKey: Key.ocrFilePickerEnabled) as? Bool ?? true
+        isOCRShortcutEnabled = defaults.object(forKey: Key.ocrShortcutEnabled) as? Bool ?? false
+        if let shortcutData = defaults.data(forKey: Key.ocrShortcut),
+           let storedShortcut = try? JSONDecoder().decode(GlobalShortcut.self, from: shortcutData) {
+            ocrShortcut = storedShortcut
+        } else {
+            ocrShortcut = .defaultOCRShortcut
+        }
     }
 
     var selectedProvider: Provider {
@@ -135,8 +223,27 @@ final class AppSettings {
         Provider.presets.filter { enabledProviderIDs.contains($0.id) }
     }
 
-    var targetLanguage: TranslationLanguage {
-        TranslationLanguage.language(for: targetLanguageCode)
+    var languagePair: LanguagePair {
+        LanguagePair(
+            primary: TranslationLanguage.language(for: primaryLanguageCode),
+            secondary: TranslationLanguage.language(for: secondaryLanguageCode)
+        )
+    }
+
+    /// Choosing the language already used by the other slot swaps the two, so the pair never
+    /// contains the same language twice.
+    func setPrimaryLanguageCode(_ code: String) {
+        if code == secondaryLanguageCode {
+            secondaryLanguageCode = primaryLanguageCode
+        }
+        primaryLanguageCode = code
+    }
+
+    func setSecondaryLanguageCode(_ code: String) {
+        if code == primaryLanguageCode {
+            primaryLanguageCode = secondaryLanguageCode
+        }
+        secondaryLanguageCode = code
     }
 
     func baseURL(for providerID: ProviderIdentifier) -> String {
@@ -197,5 +304,16 @@ final class AppSettings {
     func setCachedModels(_ models: [ModelDescriptor], for providerID: ProviderIdentifier) {
         guard let data = try? JSONEncoder().encode(models) else { return }
         defaults.set(data, forKey: Key.cachedModels(providerID))
+    }
+
+    private static func defaultSecondaryLanguageCode(differentFrom primaryCode: String) -> String {
+        let primaryLanguage = TranslationLanguage.language(for: primaryCode)
+        if let systemCode = Locale.preferredLanguages.first.map(TranslationLanguage.baseLanguageCode(for:)),
+           !primaryLanguage.matches(languageCode: systemCode) {
+            return systemCode
+        }
+        return primaryLanguage.matches(languageCode: TranslationLanguage.english.code)
+            ? TranslationLanguage.chinese.code
+            : TranslationLanguage.english.code
     }
 }

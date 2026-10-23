@@ -45,6 +45,10 @@ final class FloatingPanelController: NSObject, NSWindowDelegate {
         self.session = session
     }
 
+    var isVisible: Bool {
+        panel.isVisible
+    }
+
     func toggle() {
         panel.isVisible ? hide() : show()
     }
@@ -76,6 +80,18 @@ final class FloatingPanelController: NSObject, NSWindowDelegate {
 
     func prepareForInsertion() {
         panel.orderOut(nil)
+    }
+
+    func hideForScreenCapture() {
+        panel.orderOut(nil)
+    }
+
+    func restoreAfterScreenCapture() {
+        panel.orderFrontRegardless()
+        panel.makeKey()
+        DispatchQueue.main.async { [weak self] in
+            self?.session.requestEditorFocus()
+        }
     }
 
     func restoreAfterInsertionFailure() {

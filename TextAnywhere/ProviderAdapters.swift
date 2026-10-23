@@ -23,11 +23,12 @@ enum ProviderAdapterRegistry {
         if providerID == .xAI { return XAIAdapter(session: session) }
         if providerID == .bailian { return BailianAdapter(session: session) }
         if providerID == .deepSeek { return DeepSeekAdapter(session: session) }
+        if providerID == .bigModel { return BigModelAdapter(session: session) }
         return OllamaAdapter(session: session)
     }
 }
 
-private struct ProviderHTTPClient {
+struct ProviderHTTPClient {
 
     let session: URLSession
 
@@ -294,7 +295,35 @@ private struct DeepSeekAdapter: TranslationProviderAdapter {
             configuration: configuration,
             session: session,
             apiKey: requiredAPIKey(configuration),
-            thinking: DeepSeekThinkingConfiguration(
+            thinking: ThinkingTypeConfiguration(
+                type: configuration.thinkingEnabled ? "enabled" : "disabled"
+            )
+        )
+    }
+}
+
+private struct BigModelAdapter: TranslationProviderAdapter {
+
+    let session: URLSession
+
+    func fetchModels(configuration: ProviderConfiguration) async throws -> [ModelDescriptor] {
+        let request = try authorizedRequest(
+            url: endpoint(configuration.baseURL, path: "models"),
+            apiKey: requiredAPIKey(configuration)
+        )
+        let data = try await ProviderHTTPClient(session: session).send(request)
+        let response = try decode(ModelListResponse.self, from: data)
+        return normalizedModels(response.data.map { ModelDescriptor(id: $0.id, displayName: $0.id) })
+    }
+
+    func translate(_ request: TranslationRequest, configuration: ProviderConfiguration) async throws -> String {
+        // GLM-4.7 and later models think by default, so `thinking` is always sent explicitly.
+        try await translateChatCompletion(
+            request,
+            configuration: configuration,
+            session: session,
+            apiKey: requiredAPIKey(configuration),
+            thinking: ThinkingTypeConfiguration(
                 type: configuration.thinkingEnabled ? "enabled" : "disabled"
             )
         )
@@ -381,7 +410,7 @@ private func translateChatCompletion(
     apiKey: String,
     reasoning: OpenRouterReasoning? = nil,
     enableThinking: Bool? = nil,
-    thinking: DeepSeekThinkingConfiguration? = nil
+    thinking: ThinkingTypeConfiguration? = nil
 ) async throws -> String {
     var urlRequest = try authorizedRequest(
         url: endpoint(configuration.baseURL, path: "chat/completions"),
@@ -581,7 +610,7 @@ private struct OpenRouterReasoning: Encodable {
     let enabled: Bool
 }
 
-private struct DeepSeekThinkingConfiguration: Encodable {
+private struct ThinkingTypeConfiguration: Encodable {
     let type: String
 }
 
@@ -649,7 +678,7 @@ private struct ChatCompletionRequest: Encodable {
     let stream: Bool
     let reasoning: OpenRouterReasoning?
     let enableThinking: Bool?
-    let thinking: DeepSeekThinkingConfiguration?
+    let thinking: ThinkingTypeConfiguration?
 
     enum CodingKeys: String, CodingKey {
         case model
