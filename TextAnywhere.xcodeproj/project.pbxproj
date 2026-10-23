@@ -6,6 +6,10 @@
 	objectVersion = 77;
 	objects = {
 
+/* Begin PBXBuildFile section */
+		B10000000000000000000002 /* MarkdownEngine in Frameworks */ = {isa = PBXBuildFile; productRef = B10000000000000000000001 /* MarkdownEngine */; };
+/* End PBXBuildFile section */
+
 /* Begin PBXContainerItemProxy section */
 		A10000000000000000000007 /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
@@ -46,6 +50,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				B10000000000000000000002 /* MarkdownEngine in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -113,6 +118,7 @@
 			);
 			name = TextAnywhere;
 			packageProductDependencies = (
+				B10000000000000000000001 /* MarkdownEngine */,
 			);
 			productName = TextAnywhere;
 			productReference = EDD8E5A92F8F9595002C1A75 /* TextAnywhere.app */;
@@ -147,6 +153,9 @@
 			);
 			mainGroup = EDD8E5A02F8F9595002C1A75;
 			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				B10000000000000000000003 /* XCLocalSwiftPackageReference "Packages/MarkdownEngine" */,
+			);
 			preferredProjectObjectVersion = 77;
 			productRefGroup = EDD8E5AA2F8F9595002C1A75 /* Products */;
 			projectDirPath = "";
@@ -475,6 +484,21 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		B10000000000000000000003 /* XCLocalSwiftPackageReference "Packages/MarkdownEngine" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = Packages/MarkdownEngine;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		B10000000000000000000001 /* MarkdownEngine */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = B10000000000000000000003 /* XCLocalSwiftPackageReference "Packages/MarkdownEngine" */;
+			productName = MarkdownEngine;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = EDD8E5A12F8F9595002C1A75 /* Project object */;
 }

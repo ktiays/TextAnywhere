@@ -1,0 +1,424 @@
+{
+  "render": [
+    {
+      "name": "plain paragraph",
+      "markdown": "Hello world‸",
+      "expected": "Hello world"
+    },
+    {
+      "name": "bold concealed away from the caret",
+      "markdown": "‸a **bold** z",
+      "expected": "a «**|strong,mk,hide»«bold|strong»«**|strong,mk,hide» z"
+    },
+    {
+      "name": "bold revealed with the caret inside",
+      "markdown": "a **bo‸ld** z",
+      "expected": "a «**|strong,mk»«bold|strong»«**|strong,mk» z"
+    },
+    {
+      "name": "bold revealed with the caret touching its end",
+      "markdown": "a **bold**‸ z",
+      "expected": "a «**|strong,mk»«bold|strong»«**|strong,mk» z"
+    },
+    {
+      "name": "bold revealed with the caret touching its start",
+      "markdown": "a ‸**bold** z",
+      "expected": "a «**|strong,mk»«bold|strong»«**|strong,mk» z"
+    },
+    {
+      "name": "bold concealed one character away",
+      "markdown": "a **bold** ‸z",
+      "expected": "a «**|strong,mk,hide»«bold|strong»«**|strong,mk,hide» z"
+    },
+    {
+      "name": "bold italic nests",
+      "markdown": "‸x ***both*** y",
+      "expected": "x «*|em,mk,hide»«**|strong,em,mk,hide»«both|strong,em»«**|strong,em,mk,hide»«*|em,mk,hide» y"
+    },
+    {
+      "name": "only the touched element reveals",
+      "markdown": "**one** and *tw‸o*",
+      "expected": "«**|strong,mk,hide»«one|strong»«**|strong,mk,hide» and «*|em,mk»«two|em»«*|em,mk»"
+    },
+    {
+      "name": "nested emphasis reveals the outer element too",
+      "markdown": "**a *b‸* c**",
+      "expected": "«**|strong,mk»«a |strong»«*|strong,em,mk»«b|strong,em»«*|strong,em,mk»« c|strong»«**|strong,mk»"
+    },
+    {
+      "name": "strikethrough",
+      "markdown": "‸x ~~gone~~",
+      "expected": "x «~~|del,mk,hide»«gone|del»«~~|del,mk,hide»"
+    },
+    {
+      "name": "code span",
+      "markdown": "‸use `code` here",
+      "expected": "use «`|code,mk,hide»«code|code»«`|code,mk,hide» here"
+    },
+    {
+      "name": "code span with padding",
+      "markdown": "‸x `` a`b ``",
+      "expected": "x «`` |code,mk,hide»«a`b|code»« ``|code,mk,hide»"
+    },
+    {
+      "name": "link",
+      "markdown": "‸see [docs](https://example.com) now",
+      "expected": "see «[|link,mk,hide»«docs|link»«](|link,mk,hide»«https://example.com|link,url,mk,hide»«)|link,mk,hide» now"
+    },
+    {
+      "name": "link revealed",
+      "markdown": "see [do‸cs](https://example.com \"Title\")",
+      "expected": "see «[|link,mk»«docs|link»«](|link,mk»«https://example.com|link,url,mk»« \"Title\")|link,mk»"
+    },
+    {
+      "name": "autolink",
+      "markdown": "‸x <https://example.com>",
+      "expected": "x «<|link,mk,hide»«https://example.com|link»«>|link,mk,hide»"
+    },
+    {
+      "name": "permissive autolink",
+      "markdown": "‸go to https://example.com",
+      "expected": "go to «https://example.com|link»"
+    },
+    {
+      "name": "image stays as source",
+      "markdown": "‸![alt](a.png)",
+      "expected": "«![|img,mk»«alt|img»«](a.png)|img,mk»"
+    },
+    {
+      "name": "escape",
+      "markdown": "‸a \\*b\\* c",
+      "expected": "a «\\|mk,hide»*b«\\|mk,hide»* c"
+    },
+    {
+      "name": "heading",
+      "markdown": "# Title\n‸",
+      "expected": "«# |h1,mk,hide»«Title\n|h1»"
+    },
+    {
+      "name": "heading revealed on its line",
+      "markdown": "## Ti‸tle",
+      "expected": "«## |h2,mk»«Title|h2»"
+    },
+    {
+      "name": "heading with closing sequence",
+      "markdown": "## Title ##\n‸",
+      "expected": "«## |h2,mk,hide»«Title|h2»« ##|h2,mk,hide»«\n|h2»"
+    },
+    {
+      "name": "empty heading",
+      "markdown": "#\n\n‸text",
+      "expected": "«#|h1,mk,hide»«\n|h1»\ntext"
+    },
+    {
+      "name": "setext heading",
+      "markdown": "Title\n===\n‸",
+      "expected": "«Title\n|h1»«===|h1,mk,hide»«\n|h1»"
+    },
+    {
+      "name": "bullet list",
+      "markdown": "- one\n- two\n‸",
+      "expected": "«- |li,mk,hide»«one\n|li»«- |li,mk,hide»«two\n|li»"
+    },
+    {
+      "name": "nested list depth",
+      "markdown": "- one\n  - two\n‸",
+      "expected": "«- |li,mk,hide»«one\n|li»«  - |li,mk,d1,hide»«two\n|li,d1»"
+    },
+    {
+      "name": "ordered list",
+      "markdown": "1. one\n2. two\n‸",
+      "expected": "«1. |li,mk,hide»«one\n|li»«2. |li,mk,hide»«two\n|li»"
+    },
+    {
+      "name": "task list",
+      "markdown": "- [ ] todo\n- [x] done\n‸",
+      "expected": "«- [ ] |task,mk,hide»«todo\n|task»«- [x] |task,done,mk,hide»«done\n|task,done»"
+    },
+    {
+      "name": "empty list item",
+      "markdown": "- \n\n‸x",
+      "expected": "«- |li,mk,hide»«\n|li»\nx"
+    },
+    {
+      "name": "quote",
+      "markdown": "> quoted **text**\n‸",
+      "expected": "«> |quote,mk,d1,hide»«quoted |quote,d1»«**|strong,quote,mk,d1,hide»«text|strong,quote,d1»«**|strong,quote,mk,d1,hide»«\n|quote,d1»"
+    },
+    {
+      "name": "nested quote",
+      "markdown": "> > deep\n‸",
+      "expected": "«> > |quote,mk,d2,hide»«deep\n|quote,d2»"
+    },
+    {
+      "name": "quote with blank line",
+      "markdown": "> a\n>\n> b\n‸",
+      "expected": "«> |quote,mk,d1,hide»«a\n|quote,d1»«>|quote,mk,d1,hide»«\n|quote,d1»«> |quote,mk,d1,hide»«b\n|quote,d1»"
+    },
+    {
+      "name": "list in quote",
+      "markdown": "> - item\n‸",
+      "expected": "«> - |quote,li,mk,hide»«item\n|quote,li»"
+    },
+    {
+      "name": "fenced code",
+      "markdown": "```swift\nlet a = 1\n\nlet b = 2\n```\n‸",
+      "expected": "«```swift|pre,mk,hide»«\nlet a = 1\n\nlet b = 2\n|pre»«```|pre,mk,hide»«\n|pre»"
+    },
+    {
+      "name": "fenced code revealed on its fence line",
+      "markdown": "```swift‸\ncode\n```",
+      "expected": "«```swift|pre,mk»«\ncode\n|pre»«```|pre,mk,hide»"
+    },
+    {
+      "name": "unclosed fence",
+      "markdown": "```\ncode‸",
+      "expected": "«```|pre,mk,hide»«\ncode|pre»"
+    },
+    {
+      "name": "rule",
+      "markdown": "a\n\n---\n\n‸b",
+      "expected": "a\n\n«---|hr,mk,hide»«\n|hr»\nb"
+    },
+    {
+      "name": "table",
+      "markdown": "| A | B |\n| --- | ---: |\n| **c** | d |\n‸",
+      "expected": "«| |table,th,mk»«A|table,th»« | |table,th,mk»«B|table,th»« ||table,th,mk»«\n|table,th»«| --- | ---: ||table,th,mk»«\n|table,th»«| |table,mk»«**|strong,table,mk,hide»«c|strong,table»«**|strong,table,mk,hide»« | |table,mk»«d|table»« ||table,mk»«\n|table»"
+    },
+    {
+      "name": "keycap emoji keeps its asterisk visible",
+      "markdown": "‸*️⃣ and *em*",
+      "expected": "*️⃣ and «*|em,mk,hide»«em|em»«*|em,mk,hide»"
+    },
+    {
+      "name": "CJK and emoji",
+      "markdown": "‸你好 **世界** 🌏",
+      "expected": "你好 «**|strong,mk,hide»«世界|strong»«**|strong,mk,hide» 🌏"
+    },
+    {
+      "name": "line mode reveals the whole line",
+      "markdown": "**a** *b*‸\n**c**",
+      "expected": "«**|strong,mk»«a|strong»«**|strong,mk» «*|em,mk»«b|em»«*|em,mk»\n«**|strong,mk,hide»«c|strong»«**|strong,mk,hide»",
+      "mode": "line"
+    },
+    {
+      "name": "selection across lines reveals block syntax on both",
+      "markdown": "# A⁅b\n> c⁆d",
+      "expected": "«# |h1,mk»«Ab\n|h1»«> |quote,mk,d1»«cd|quote,d1»"
+    },
+    {
+      "name": "link reference definitions stay visible",
+      "markdown": "‸[x]: https://example.com\n\n[x]",
+      "expected": "[x]: https://example.com\n\n«[|link,mk,hide»«x|link»«]|link,mk,hide»"
+    },
+    {
+      "name": "hard break backslash",
+      "markdown": "‸a\\\nb",
+      "expected": "a«\\|mk»\nb"
+    },
+    {
+      "name": "emphasis across lines",
+      "markdown": "‸x\n*a\nb*",
+      "expected": "x\n«*|em,mk,hide»«a|em»\n«b|em»«*|em,mk,hide»"
+    },
+    {
+      "name": "crlf line endings",
+      "markdown": "# A\r\n- b\r\n‸",
+      "expected": "«# |h1,mk,hide»«A\r\n|h1»«- |li,mk,hide»«b\r\n|li»"
+    }
+  ],
+  "plans": [
+    {
+      "name": "enter continues a bullet",
+      "action": "newline",
+      "markdown": "- first‸",
+      "expected": "- first\n- ‸"
+    },
+    {
+      "name": "enter splits an item",
+      "action": "newline",
+      "markdown": "- fir‸st",
+      "expected": "- fir\n- ‸st"
+    },
+    {
+      "name": "enter continues an ordered list",
+      "action": "newline",
+      "markdown": "9. item‸",
+      "expected": "9. item\n10. ‸"
+    },
+    {
+      "name": "enter keeps long numbers exact",
+      "action": "newline",
+      "markdown": "999999999. item‸",
+      "expected": "999999999. item\n1000000000. ‸"
+    },
+    {
+      "name": "enter continues a task unchecked",
+      "action": "newline",
+      "markdown": "- [x] task‸",
+      "expected": "- [x] task\n- [ ] ‸"
+    },
+    {
+      "name": "enter continues a quote",
+      "action": "newline",
+      "markdown": "> quote‸",
+      "expected": "> quote\n> ‸"
+    },
+    {
+      "name": "enter continues a nested item",
+      "action": "newline",
+      "markdown": "- a\n  - b‸",
+      "expected": "- a\n  - b\n  - ‸"
+    },
+    {
+      "name": "enter on an empty item ends the list",
+      "action": "newline",
+      "markdown": "- [x] task\n- [ ] ‸",
+      "expected": "- [x] task\n‸"
+    },
+    {
+      "name": "enter on an empty bullet ends the list",
+      "action": "newline",
+      "markdown": "- a\n- ‸",
+      "expected": "- a\n‸"
+    },
+    {
+      "name": "enter in a paragraph has no plan",
+      "action": "newline",
+      "markdown": "text‸",
+      "expected": null
+    },
+    {
+      "name": "enter inside the marker has no plan",
+      "action": "newline",
+      "markdown": "-‸ item",
+      "expected": null
+    },
+    {
+      "name": "enter in code has no plan",
+      "action": "newline",
+      "markdown": "```\n- a‸\n```",
+      "expected": null
+    },
+    {
+      "name": "tab indents an item",
+      "action": "tab",
+      "markdown": "- first\n- sec‸ond",
+      "expected": "- first\n  - sec‸ond"
+    },
+    {
+      "name": "shift tab outdents an item",
+      "action": "backtab",
+      "markdown": "- first\n  - sec‸ond",
+      "expected": "- first\n- sec‸ond"
+    },
+    {
+      "name": "tab indents selected items",
+      "action": "tab",
+      "markdown": "- ⁅a\n- b⁆",
+      "expected": "  - ⁅a\n  - b⁆"
+    },
+    {
+      "name": "tab in a paragraph has no plan",
+      "action": "tab",
+      "markdown": "text‸",
+      "expected": null
+    },
+    {
+      "name": "backspace removes a bullet",
+      "action": "backspace",
+      "markdown": "- first\n- ‸second",
+      "expected": "- first\n‸second"
+    },
+    {
+      "name": "backspace removes a heading marker",
+      "action": "backspace",
+      "markdown": "## ‸Title",
+      "expected": "‸Title"
+    },
+    {
+      "name": "backspace inside text has no plan",
+      "action": "backspace",
+      "markdown": "- se‸cond",
+      "expected": null
+    },
+    {
+      "name": "toggle task checks",
+      "action": "toggleTask",
+      "markdown": "- [ ] ta‸sk",
+      "expected": "- [x] task"
+    },
+    {
+      "name": "toggle task unchecks",
+      "action": "toggleTask",
+      "markdown": "- [x] ‸task",
+      "expected": "- [ ] task"
+    },
+    {
+      "name": "toggle task outside a task has no plan",
+      "action": "toggleTask",
+      "markdown": "- item‸",
+      "expected": null
+    },
+    {
+      "name": "bold wraps the selection",
+      "action": "bold",
+      "markdown": "⁅hello⁆ world",
+      "expected": "**⁅hello⁆** world"
+    },
+    {
+      "name": "bold unwraps",
+      "action": "bold",
+      "markdown": "**⁅hello⁆** world",
+      "expected": "⁅hello⁆ world"
+    },
+    {
+      "name": "bold unwraps a selection including delimiters",
+      "action": "bold",
+      "markdown": "⁅**hello**⁆ world",
+      "expected": "⁅hello⁆ world"
+    },
+    {
+      "name": "bold wraps the word at the caret",
+      "action": "bold",
+      "markdown": "hel‸lo world",
+      "expected": "**hel‸lo** world"
+    },
+    {
+      "name": "bold with nothing to wrap inserts delimiters",
+      "action": "bold",
+      "markdown": "a ‸ b",
+      "expected": "a **‸** b"
+    },
+    {
+      "name": "bold leaves italic of a bold italic span",
+      "action": "bold",
+      "markdown": "***bo‸th***",
+      "expected": "*bo‸th*"
+    },
+    {
+      "name": "italic wraps",
+      "action": "italic",
+      "markdown": "⁅a⁆",
+      "expected": "*⁅a⁆*"
+    },
+    {
+      "name": "code wraps with a longer fence than the text has",
+      "action": "code",
+      "markdown": "⁅a`b⁆",
+      "expected": "``⁅a`b⁆``"
+    },
+    {
+      "name": "strikethrough unwraps",
+      "action": "strikethrough",
+      "markdown": "~~go‸ne~~",
+      "expected": "go‸ne"
+    },
+    {
+      "name": "formatting across lines has no plan",
+      "action": "bold",
+      "markdown": "⁅a\nb⁆",
+      "expected": null
+    }
+  ]
+}

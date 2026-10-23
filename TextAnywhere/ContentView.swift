@@ -11,40 +11,36 @@ struct ContentView: View {
 
     @Bindable var session: TranslationSession
 
-    @FocusState private var editorFocused: Bool
     @State private var editorHasMarkedText = false
     @State private var isImageDropTargeted = false
     @State private var isFileImporterPresented = false
-    @State private var markdownEditor = MarkdownEditorController()
 
     var body: some View {
         VStack(spacing: 12) {
             HStack(spacing: 10) {
                 targetApplicationMenu
                 Spacer()
-                markdownRenderingToggle
+                if #available(macOS 27, *) {
+                    markdownRenderingToggle
+                }
                 targetLanguageMenu
             }
 
             ZStack(alignment: .topLeading) {
-                if session.isMarkdownRenderingEnabled {
-                    MarkdownEditorView(
-                        controller: markdownEditor,
-                        markdown: session.draft,
-                        placeholder: placeholder,
-                        isEditable: session.isEditable
-                    ) { markdown in
-                        session.draft = markdown
-                    }
-                } else {
-                    TextEditor(text: $session.draft)
-                        .font(.body)
-                        .scrollContentBackground(.hidden)
-                        .focused($editorFocused)
-                        .disabled(!session.isEditable)
+                MarkdownTextEditor(
+                    text: $session.draft,
+                    isEditable: session.isEditable,
+                    rendersMarkdown: session.isMarkdownRenderingEnabled,
+                    focusRequestID: session.focusRequestID
+                ) { hasMarkedText in
+                    editorHasMarkedText = hasMarkedText
+                } onPaste: {
+                    session.recognizePastedContent()
+                } onEscape: {
+                    session.handleEscape()
                 }
 
-                if !session.isMarkdownRenderingEnabled && session.draft.isEmpty && !editorHasMarkedText {
+                if session.draft.isEmpty && !editorHasMarkedText {
                     Text(placeholder)
                         .foregroundStyle(.tertiary)
                         .padding(.horizontal, 5)
@@ -159,25 +155,10 @@ struct ContentView: View {
         .padding(.top, 8)
         .fontDesign(.rounded)
         .background(.regularMaterial)
-        .onAppear {
-            editorFocused = true
-        }
-        .onChange(of: session.focusRequestID) {
-            if session.isMarkdownRenderingEnabled {
-                markdownEditor.focus()
-            } else {
-                editorFocused = true
-            }
-        }
-        .onChange(of: session.isMarkdownRenderingEnabled) {
-            if !session.isMarkdownRenderingEnabled {
-                editorFocused = true
-            }
-        }
         .background {
             CommandEnterMonitor(
                 isEnabled: session.canPerformPrimaryAction,
-                onEscape: session.voiceInput.isActive || session.isRecognizingText || session.isMarkdownRenderingEnabled
+                onEscape: session.voiceInput.isActive || session.isRecognizingText
                     ? { session.handleEscape() }
                     : nil
             ) {
@@ -185,29 +166,12 @@ struct ContentView: View {
             }
             .allowsHitTesting(false)
         }
-        .background {
-            if session.isPasteAndDropOCRAvailable {
-                ImagePasteMonitor {
-                    session.recognizePastedContent()
-                }
-                .allowsHitTesting(false)
-            }
-        }
         .fileImporter(isPresented: $isFileImporterPresented, allowedContentTypes: [.image, .pdf]) { result in
             switch result {
             case .success(let url):
                 session.recognizeText(from: .fileURL(url))
             case .failure(let error):
                 session.showError(error.localizedDescription)
-            }
-        }
-        .task {
-            for await notification in NotificationCenter.default.notifications(named: NSTextView.didChangeSelectionNotification) {
-                guard let textView = notification.object as? NSTextView,
-                      textView.window?.firstResponder === textView else {
-                    continue
-                }
-                editorHasMarkedText = textView.hasMarkedText()
             }
         }
         .onExitCommand {

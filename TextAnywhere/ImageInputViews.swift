@@ -6,68 +6,6 @@
 import AppKit
 import SwiftUI
 
-/// Intercepts ⌘V in the hosting window so `onPaste` can claim images before the text view
-/// receives them. `onPaste` returns `false` to let the regular paste proceed.
-struct ImagePasteMonitor: NSViewRepresentable {
-
-    let onPaste: () -> Bool
-
-    func makeCoordinator() -> Coordinator {
-        Coordinator()
-    }
-
-    func makeNSView(context: Context) -> NSView {
-        NSView()
-    }
-
-    func updateNSView(_ nsView: NSView, context: Context) {
-        context.coordinator.update(hostView: nsView, onPaste: onPaste)
-    }
-
-    static func dismantleNSView(_ nsView: NSView, coordinator: Coordinator) {
-        coordinator.stop()
-    }
-
-    final class Coordinator {
-
-        private weak var hostView: NSView?
-        private var eventMonitor: Any?
-        private var onPaste: (() -> Bool)?
-
-        func update(hostView: NSView, onPaste: @escaping () -> Bool) {
-            self.hostView = hostView
-            self.onPaste = onPaste
-            guard eventMonitor == nil else { return }
-            eventMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-                guard let self,
-                      let window = self.hostView?.window,
-                      event.window === window,
-                      isCommandV(event),
-                      let textInput = window.firstResponder as? NSTextInputClient,
-                      !textInput.hasMarkedText(),
-                      let onPaste = self.onPaste,
-                      onPaste() else {
-                    return event
-                }
-                return nil
-            }
-        }
-
-        func stop() {
-            if let eventMonitor {
-                NSEvent.removeMonitor(eventMonitor)
-                self.eventMonitor = nil
-            }
-            onPaste = nil
-        }
-
-        private func isCommandV(_ event: NSEvent) -> Bool {
-            let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
-            return modifiers == .command && event.charactersIgnoringModifiers?.lowercased() == "v"
-        }
-    }
-}
-
 /// A drop target for images and PDFs layered above the text editor. It ignores mouse hit
 /// testing, so clicks and text drags still reach the editor underneath.
 struct ImageDropTarget: NSViewRepresentable {
