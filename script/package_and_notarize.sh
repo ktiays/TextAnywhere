@@ -26,6 +26,8 @@ SIGNING_IDENTITY="${SIGNING_IDENTITY:-}"
 DEVELOPMENT_TEAM="${DEVELOPMENT_TEAM:-}"
 POLL_INTERVAL_SECONDS="${POLL_INTERVAL_SECONDS:-20}"
 OUTPUT_PATH="${OUTPUT_PATH:-}"
+MARKETING_VERSION="${MARKETING_VERSION:-}"
+CURRENT_PROJECT_VERSION="${CURRENT_PROJECT_VERSION:-}"
 
 print_usage() {
     /bin/cat <<'EOF'
@@ -42,6 +44,8 @@ Optional environment:
   DEVELOPMENT_TEAM         Apple Developer team ID. Inferred from the signing identity when omitted.
   POLL_INTERVAL_SECONDS    Seconds between notarization status checks. Defaults to 20.
   OUTPUT_PATH              Final ZIP path. Relative paths are resolved from the project root.
+  MARKETING_VERSION        Overrides the project's marketing version (CFBundleShortVersionString).
+  CURRENT_PROJECT_VERSION  Overrides the project's build number (CFBundleVersion).
 
 Example credential setup:
   xcrun notarytool store-credentials "TextAnywhere" \
@@ -120,6 +124,10 @@ fi
 [[ -n "$DEVELOPMENT_TEAM" ]] || fail \
     "Unable to infer the team ID from the signing identity. Set DEVELOPMENT_TEAM explicitly."
 
+VERSION_OVERRIDES=()
+[[ -n "$MARKETING_VERSION" ]] && VERSION_OVERRIDES+=("MARKETING_VERSION=${MARKETING_VERSION}")
+[[ -n "$CURRENT_PROJECT_VERSION" ]] && VERSION_OVERRIDES+=("CURRENT_PROJECT_VERSION=${CURRENT_PROJECT_VERSION}")
+
 /bin/mkdir -p "$BUILD_ROOT"
 /bin/rm -rf "$DERIVED_DATA_PATH" "$ARCHIVE_PATH"
 /bin/rm -f \
@@ -140,8 +148,8 @@ xcodebuild \
     CODE_SIGN_STYLE=Manual \
     CODE_SIGN_IDENTITY="$SIGNING_IDENTITY" \
     DEVELOPMENT_TEAM="$DEVELOPMENT_TEAM" \
-    CODE_SIGN_INJECT_BASE_ENTITLEMENTS=NO \
-    OTHER_CODE_SIGN_FLAGS="--timestamp"
+    OTHER_CODE_SIGN_FLAGS="--timestamp" \
+    "${VERSION_OVERRIDES[@]}"
 
 [[ -d "$APP_PATH" ]] || fail "Archive did not contain ${APP_PATH}."
 
