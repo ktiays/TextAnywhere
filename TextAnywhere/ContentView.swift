@@ -21,7 +21,8 @@ struct ContentView: View {
                 targetApplicationMenu
                 Spacer()
                 if #available(macOS 27, *) {
-                    markdownRenderingToggle
+                    markdownRenderingPicker
+                        .padding(.trailing, 8)
                 }
                 targetLanguageMenu
             }
@@ -187,19 +188,21 @@ struct ContentView: View {
         session.isPasteAndDropOCRAvailable ? "Type text, or paste or drop an image…" : "Type text to translate…"
     }
 
-    private var markdownRenderingToggle: some View {
-        Button {
-            session.isMarkdownRenderingEnabled.toggle()
-        } label: {
-            Image(systemName: session.isMarkdownRenderingEnabled ? "doc.richtext.fill" : "doc.richtext")
-                .foregroundStyle(session.isMarkdownRenderingEnabled ? AnyShapeStyle(.tint) : AnyShapeStyle(.secondary))
-                .frame(width: 24, height: 24)
-                .contentShape(Rectangle())
+    @available(macOS 27, *)
+    private var markdownRenderingPicker: some View {
+        Picker("Editor Mode", selection: $session.isMarkdownRenderingEnabled) {
+            Label("Plain Text", systemImage: "doc.plaintext")
+                .labelStyle(.iconOnly)
+                .tag(false)
+            Label("Markdown", systemImage: "doc.richtext")
+                .labelStyle(.iconOnly)
+                .tag(true)
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("Render Markdown")
-        .accessibilityAddTraits(session.isMarkdownRenderingEnabled ? .isSelected : [])
-        .help(session.isMarkdownRenderingEnabled ? "Edit as plain text" : "Edit with Markdown rendering")
+        .pickerStyle(.tabs)
+        .buttonBorderShape(.capsule)
+        .labelsHidden()
+        .fixedSize()
+        .help("Choose whether to edit as plain text or with Markdown rendering")
     }
 
     private var activityDescription: String {
