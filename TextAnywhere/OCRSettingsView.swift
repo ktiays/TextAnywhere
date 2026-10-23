@@ -65,6 +65,17 @@ struct OCRSettingsView: View {
                     .frame(width: 220, alignment: .trailing)
                 }
                 .disabled(!settings.isOCREnabled)
+
+                Toggle(
+                    isOn: Binding(
+                        get: { settings.isOCRHTMLTableConversionEnabled },
+                        set: { settings.isOCRHTMLTableConversionEnabled = $0 }
+                    )
+                ) {
+                    Text("Convert HTML Tables")
+                    Text("Rewrites recognized HTML tables as Markdown tables. Merged cells are split into empty cells.")
+                }
+                .disabled(!settings.isOCREnabled)
             } footer: {
                 Text("\(settings.ocrModel.displayName) requires \(settings.ocrModel.provider.name) to be enabled and its API key configured in Providers → \(settings.ocrModel.provider.name). OCR stays hidden in the editor until then. Recognize and Translate adds the translation of the recognized text to the draft using the provider selected in the editor.")
             }

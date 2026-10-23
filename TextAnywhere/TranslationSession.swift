@@ -316,6 +316,7 @@ final class TranslationSession {
             } else {
                 translationConfiguration = nil
             }
+            let convertsHTMLTables = settings.isOCRHTMLTableConversionEnabled
             state = .idle
             isRecognizingText = true
             recognitionTask = Task { [weak self] in
@@ -324,9 +325,8 @@ final class TranslationSession {
                     let document = try await Task.detached(priority: .userInitiated) {
                         try OCRDocument(source: source)
                     }.value
-                    result = .success(
-                        try await OCRClient().recognizeText(in: document, configuration: configuration)
-                    )
+                    let text = try await OCRClient().recognizeText(in: document, configuration: configuration)
+                    result = .success(convertsHTMLTables ? HTMLTableConverter.convertingTables(in: text) : text)
                 } catch {
                     result = .failure(error)
                 }

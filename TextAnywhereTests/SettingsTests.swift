@@ -180,6 +180,7 @@ final class SettingsTests: XCTestCase {
         XCTAssertTrue(settings.isOCREnabled)
         XCTAssertEqual(settings.ocrModel, .glmOCR)
         XCTAssertEqual(settings.ocrMode, .recognizeOnly)
+        XCTAssertFalse(settings.isOCRHTMLTableConversionEnabled)
         XCTAssertTrue(settings.isOCRScreenCaptureEnabled)
         XCTAssertTrue(settings.isOCRPasteAndDropEnabled)
         XCTAssertTrue(settings.isOCRFilePickerEnabled)
@@ -188,6 +189,7 @@ final class SettingsTests: XCTestCase {
 
         settings.isOCREnabled = false
         settings.ocrMode = .recognizeAndTranslate
+        settings.isOCRHTMLTableConversionEnabled = true
         settings.isOCRScreenCaptureEnabled = false
         settings.isOCRPasteAndDropEnabled = false
         settings.isOCRFilePickerEnabled = false
@@ -197,6 +199,7 @@ final class SettingsTests: XCTestCase {
         let restored = AppSettings(defaults: defaults)
         XCTAssertFalse(restored.isOCREnabled)
         XCTAssertEqual(restored.ocrMode, .recognizeAndTranslate)
+        XCTAssertTrue(restored.isOCRHTMLTableConversionEnabled)
         XCTAssertFalse(restored.isOCRScreenCaptureEnabled)
         XCTAssertFalse(restored.isOCRPasteAndDropEnabled)
         XCTAssertFalse(restored.isOCRFilePickerEnabled)
