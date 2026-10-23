@@ -283,18 +283,14 @@ struct ContentView: View {
             if session.enabledProviders.isEmpty {
                 Text("No Providers Enabled")
             } else {
-                ForEach(session.enabledProviders) { provider in
-                    Button {
-                        session.selectProvider(provider)
-                    } label: {
-                        HStack {
-                            Text(provider.name)
-                            if session.selectedProvider == provider {
-                                Image(systemName: "checkmark")
-                            }
-                        }
+                Picker("Provider", selection: providerSelection) {
+                    ForEach(session.enabledProviders) { provider in
+                        Text(provider.name)
+                            .tag(provider)
                     }
                 }
+                .pickerStyle(.inline)
+                .labelsHidden()
             }
         } label: {
             Group {
@@ -308,14 +304,22 @@ struct ContentView: View {
                 }
             }
             .frame(width: 16, height: 16)
+            .frame(width: 24, height: 24)
+            .contentShape(Rectangle())
         }
         .menuStyle(.button)
-        .menuIndicator(.hidden)
-        .buttonStyle(.glass)
-        .buttonBorderShape(.circle)
+        .buttonStyle(.plain)
         .fixedSize()
         .accessibilityLabel(providerMenuDescription)
         .help(providerMenuDescription)
+    }
+
+    private var providerSelection: Binding<Provider> {
+        Binding {
+            session.selectedProvider
+        } set: { provider in
+            session.selectProvider(provider)
+        }
     }
 
     private var providerMenuDescription: String {
