@@ -203,7 +203,9 @@ struct ContentView: View {
     }
 
     private var activityDescription: String {
-        if session.isRecognizingText {
+        if session.isTranslatingRecognizedText {
+            "Translating…"
+        } else if session.isRecognizingText {
             "Recognizing text…"
         } else if session.voiceInput.phase == .transcribing {
             "Transcribing…"

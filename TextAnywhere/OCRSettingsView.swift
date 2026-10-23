@@ -47,8 +47,26 @@ struct OCRSettingsView: View {
                     .frame(width: 220, alignment: .trailing)
                 }
                 .disabled(!settings.isOCREnabled)
+
+                LabeledContent("Mode") {
+                    Picker(
+                        "Mode",
+                        selection: Binding(
+                            get: { settings.ocrMode },
+                            set: { settings.ocrMode = $0 }
+                        )
+                    ) {
+                        ForEach(OCRMode.allCases) { mode in
+                            Text(mode.displayName)
+                                .tag(mode)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 220, alignment: .trailing)
+                }
+                .disabled(!settings.isOCREnabled)
             } footer: {
-                Text("\(settings.ocrModel.displayName) requires \(settings.ocrModel.provider.name) to be enabled and its API key configured in Providers → \(settings.ocrModel.provider.name). OCR stays hidden in the editor until then.")
+                Text("\(settings.ocrModel.displayName) requires \(settings.ocrModel.provider.name) to be enabled and its API key configured in Providers → \(settings.ocrModel.provider.name). OCR stays hidden in the editor until then. Recognize and Translate adds the translation of the recognized text to the draft using the provider selected in the editor.")
             }
 
             Section {

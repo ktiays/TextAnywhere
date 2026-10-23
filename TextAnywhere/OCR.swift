@@ -29,6 +29,23 @@ enum OCRModel: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+enum OCRMode: String, CaseIterable, Identifiable, Sendable {
+
+    case recognizeOnly
+    case recognizeAndTranslate
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .recognizeOnly:
+            "Recognize Only"
+        case .recognizeAndTranslate:
+            "Recognize and Translate"
+        }
+    }
+}
+
 enum OCRSource: Sendable {
 
     case fileURL(URL)

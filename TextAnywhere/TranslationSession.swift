@@ -32,6 +32,7 @@ final class TranslationSession {
     private(set) var detectedLanguageCode: String?
     private(set) var state: State = .idle
     private(set) var isRecognizingText = false
+    private(set) var isTranslatingRecognizedText = false
     var isMarkdownRenderingEnabled = false
     private(set) var selectedTarget: TargetApplication?
     private(set) var focusRequestID = 0
@@ -304,6 +305,17 @@ final class TranslationSession {
                 model: model,
                 apiKey: credentials.apiKey(for: model.provider.id)
             )
+            let translationConfiguration: ProviderConfiguration?
+            if settings.ocrMode == .recognizeAndTranslate {
+                guard hasAvailableProvider else {
+                    throw ProviderError.invalidConfiguration(
+                        "Enable a model provider in Settings before translating."
+                    )
+                }
+                translationConfiguration = try providerConfiguration(for: selectedProvider)
+            } else {
+                translationConfiguration = nil
+            }
             state = .idle
             isRecognizingText = true
             recognitionTask = Task { [weak self] in
@@ -319,18 +331,51 @@ final class TranslationSession {
                     result = .failure(error)
                 }
                 guard let self, !Task.isCancelled else { return }
-                finishTextRecognition()
                 switch result {
                 case .success(let text):
-                    draft += draft.isEmpty ? text : "\n" + text
-                    requestEditorFocus()
+                    if let translationConfiguration {
+                        await translateRecognizedText(text, configuration: translationConfiguration)
+                    } else {
+                        finishTextRecognition()
+                        appendRecognizedText(text)
+                    }
                 case .failure(let error):
+                    finishTextRecognition()
                     showError(error.localizedDescription)
                 }
             }
         } catch {
             showError(error.localizedDescription)
         }
+    }
+
+    /// Falls back to the recognized text when translation fails, so the recognition result
+    /// isn't lost.
+    private func translateRecognizedText(_ text: String, configuration: ProviderConfiguration) async {
+        isTranslatingRecognizedText = true
+        let targetLanguage = languagePair.targetLanguage(
+            for: settings.targetLanguageMode,
+            detectedLanguageCode: LanguageDetector.languageCode(of: text)
+        )
+        do {
+            let translatedText = try await adapterFactory(configuration.providerID).translate(
+                TranslationRequest(text: text, targetLanguage: targetLanguage),
+                configuration: configuration
+            )
+            guard !Task.isCancelled else { return }
+            finishTextRecognition()
+            appendRecognizedText(translatedText)
+        } catch {
+            guard !Task.isCancelled else { return }
+            finishTextRecognition()
+            appendRecognizedText(text)
+            showError("The recognized text couldn't be translated: \(error.localizedDescription)")
+        }
+    }
+
+    private func appendRecognizedText(_ text: String) {
+        draft += draft.isEmpty ? text : "\n" + text
+        requestEditorFocus()
     }
 
     private func cancelTextRecognition() {
@@ -341,6 +386,7 @@ final class TranslationSession {
     private func finishTextRecognition() {
         recognitionTask = nil
         isRecognizingText = false
+        isTranslatingRecognizedText = false
     }
 
     private var isBusy: Bool {
