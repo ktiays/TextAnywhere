@@ -50,6 +50,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsWindowController.showSettings()
     }
 
+    @objc private func checkForUpdates() {
+        controller.updateController.checkForUpdates()
+    }
+
     private func configureStatusItem() {
         guard statusItem == nil else { return }
 
@@ -72,6 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 keyEquivalent: ","
             )
         )
+        menu.addItem(actionItem(title: "Check for Updates…", action: #selector(checkForUpdates)))
         menu.addItem(.separator())
         menu.addItem(
             actionItem(
@@ -117,6 +122,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 target: NSApp
             )
         )
+        menu.addItem(actionItem(title: "Check for Updates…", action: #selector(checkForUpdates)))
         menu.addItem(.separator())
         menu.addItem(
             actionItem(
@@ -257,6 +263,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         item.keyEquivalentModifierMask = modifierMask
         item.target = nil
         return item
+    }
+}
+
+extension AppDelegate: NSMenuItemValidation {
+
+    func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        if menuItem.action == #selector(checkForUpdates) {
+            return !controller.updateController.isBusy
+        }
+        return true
     }
 }
 

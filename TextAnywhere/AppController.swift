@@ -12,6 +12,7 @@ final class AppController {
     let credentials: any CredentialStore
     let insertionService: any TextInsertionService
     let applicationTracker: ApplicationTracker
+    let updateController: UpdateController
 
     private let pasteboard: any PasteboardWriting
 
@@ -44,6 +45,7 @@ final class AppController {
         self.insertionService = insertionService
         self.applicationTracker = applicationTracker
         self.pasteboard = pasteboard
+        updateController = UpdateController(settings: settings)
 
         session = TranslationSession(
             settings: settings,
@@ -92,6 +94,7 @@ final class AppController {
         } catch {
             session.showError("The OCR shortcut couldn't be registered: \(error.localizedDescription)")
         }
+        updateController.start()
     }
 
     func toggleEditor() {

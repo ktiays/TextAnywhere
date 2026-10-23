@@ -34,6 +34,9 @@ final class AppSettings {
         static let ocrFilePickerEnabled = "ocrFilePickerEnabled"
         static let ocrShortcutEnabled = "ocrShortcutEnabled"
         static let ocrShortcut = "ocrShortcut"
+        static let automaticUpdateCheckEnabled = "automaticUpdateCheckEnabled"
+        static let lastUpdateCheckDate = "lastUpdateCheckDate"
+        static let skippedUpdateVersion = "skippedUpdateVersion"
 
         static func baseURL(_ providerID: ProviderIdentifier) -> String {
             "provider.\(providerID.rawValue).baseURL"
@@ -178,6 +181,24 @@ final class AppSettings {
         }
     }
 
+    var isAutomaticUpdateCheckEnabled: Bool {
+        didSet {
+            defaults.set(isAutomaticUpdateCheckEnabled, forKey: Key.automaticUpdateCheckEnabled)
+        }
+    }
+
+    var lastUpdateCheckDate: Date? {
+        didSet {
+            defaults.set(lastUpdateCheckDate, forKey: Key.lastUpdateCheckDate)
+        }
+    }
+
+    var skippedUpdateVersion: String? {
+        didSet {
+            defaults.set(skippedUpdateVersion, forKey: Key.skippedUpdateVersion)
+        }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         transcriptionModel = defaults.string(forKey: "transcriptionModel") ?? TranscriptionConfiguration.defaultModel
@@ -231,6 +252,9 @@ final class AppSettings {
         } else {
             ocrShortcut = .defaultOCRShortcut
         }
+        isAutomaticUpdateCheckEnabled = defaults.object(forKey: Key.automaticUpdateCheckEnabled) as? Bool ?? true
+        lastUpdateCheckDate = defaults.object(forKey: Key.lastUpdateCheckDate) as? Date
+        skippedUpdateVersion = defaults.string(forKey: Key.skippedUpdateVersion)
     }
 
     var selectedProvider: Provider {

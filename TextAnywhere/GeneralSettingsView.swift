@@ -122,12 +122,52 @@ struct GeneralSettingsView: View {
             } footer: {
                 Text("Accessibility access lets TextAnywhere insert a translation into the selected app. Without it, the translation is copied to the clipboard.")
             }
+
+            Section {
+                Toggle(
+                    "Check for Updates Automatically",
+                    isOn: Binding(
+                        get: { controller.settings.isAutomaticUpdateCheckEnabled },
+                        set: { controller.settings.isAutomaticUpdateCheckEnabled = $0 }
+                    )
+                )
+
+                LabeledContent {
+                    Button("Check Now") {
+                        updateController.checkForUpdates()
+                    }
+                    .disabled(updateController.isBusy)
+                } label: {
+                    Text("Version \(updateController.currentVersionDescription)")
+                    Text(updateStatus)
+                }
+            } header: {
+                Text("Updates")
+            }
         }
         .fontDesign(.rounded)
     }
 
     private var languagePair: LanguagePair {
         controller.settings.languagePair
+    }
+
+    private var updateController: UpdateController {
+        controller.updateController
+    }
+
+    private var updateStatus: String {
+        switch updateController.activity {
+        case .checking:
+            return "Checking for updates…"
+        case .installing:
+            return "Installing update…"
+        case .idle:
+            guard let lastCheckDate = updateController.lastCheckDate else {
+                return "Never checked"
+            }
+            return "Last checked \(lastCheckDate.formatted(date: .abbreviated, time: .shortened))"
+        }
     }
 }
 
