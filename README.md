@@ -71,22 +71,6 @@ xcodebuild test -project TextAnywhere.xcodeproj -scheme TextAnywhere -destinatio
 
 Builds you sign yourself can't install updates from GitHub Releases, because the updater only accepts apps signed by the official developer team.
 
-## Releasing
-
-Pushing a tag in the form `vMAJOR.MINOR.PATCH` (for example `v1.14.0`) runs the [release workflow](.github/workflows/release.yml). It archives the app with Xcode 27, signs it with Developer ID, notarizes and staples it, and publishes a GitHub release. Tags with a pre-release suffix, such as `v2.0.0-beta.1`, are published as pre-releases and aren't offered as updates.
-
-The workflow needs these repository secrets:
-
-| Secret | Contents |
-|---|---|
-| `DEVELOPER_ID_CERTIFICATE_P12_BASE64` | Base64 of the Developer ID Application certificate and private key (`.p12`) |
-| `DEVELOPER_ID_CERTIFICATE_PASSWORD` | Password of that `.p12` |
-| `NOTARY_API_KEY_P8_BASE64` | Base64 of an App Store Connect API key (`.p8`) |
-| `NOTARY_API_KEY_ID` | Key ID of that API key |
-| `NOTARY_API_ISSUER_ID` | Issuer ID of that API key |
-
-To package a notarized build locally, see [`script/package_and_notarize.sh`](script/package_and_notarize.sh).
-
 ## Acknowledgements
 
 - [MD4C](https://github.com/mity/md4c) by Martin Mitáš, used for Markdown parsing (MIT License).
