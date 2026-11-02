@@ -12,12 +12,14 @@ protocol MarkdownDecorationSource: AnyObject {
     /// Whether the engine matches the text, so its offsets can be trusted for layout.
     var isSynchronized: Bool { get }
     func elements(in range: NSRange) -> [MarkdownElement]
+    /// The visible parts of inline code, with adjacent segments merged.
+    func codeSpanRanges(in range: NSRange) -> [NSRange]
     func isConcealed(at offset: Int) -> Bool
     func toggleTask(at offset: Int)
 }
 
-/// Draws what replaces concealed block syntax: code block backgrounds, quote bars, rules,
-/// list bullets and numbers, and task checkboxes.
+/// Draws what replaces concealed syntax: code block and inline code backgrounds, quote bars,
+/// rules, list bullets and numbers, and task checkboxes.
 ///
 /// Geometry comes only from the layout fragments that the viewport lays out, so decorations
 /// never force layout outside the viewport.
@@ -129,6 +131,12 @@ final class MarkdownDecorations: NSObject {
                 break
             }
         }
+        for range in source.codeSpanRanges(in: visibleRange) {
+            let frames = codeSpanFrames(of: range, in: textView)
+            if !frames.isEmpty {
+                items.append(.codeSpan(frames))
+            }
+        }
         backgroundView.items = items
         layoutCheckboxes(taskSlots, in: textView)
     }
@@ -143,6 +151,35 @@ final class MarkdownDecorations: NSObject {
             .filter { NSIntersectionRange($0.range, range).length > 0 }
             .map(\.frame)
             .reduce(nil) { union, frame in union?.union(frame) ?? frame }
+    }
+
+    /// One frame per line that the code span covers, widened into the padding that the
+    /// concealed backticks leave on either side. The code font is smaller than the line's
+    /// body text, so each frame is fitted around the code's own glyphs rather than the whole
+    /// line, which keeps the code vertically centered in its background.
+    private func codeSpanFrames(of range: NSRange, in textView: MarkdownTextView) -> [CGRect] {
+        guard let layoutManager = textView.textLayoutManager,
+              let contentManager = layoutManager.textContentManager,
+              let font = textView.textStorage?.attribute(.font, at: range.location, effectiveRange: nil) as? NSFont,
+              let start = contentManager.location(contentManager.documentRange.location, offsetBy: range.location),
+              let end = contentManager.location(start, offsetBy: range.length),
+              let textRange = NSTextRange(location: start, end: end) else {
+            return []
+        }
+        let origin = textView.textContainerOrigin
+        let padding = MarkdownTheme.codeSpanPadding
+        var frames: [CGRect] = []
+        layoutManager.enumerateTextSegments(in: textRange, type: .standard, options: []) { _, frame, baseline, _ in
+            let baselineY = frame.minY + baseline + origin.y
+            frames.append(CGRect(
+                x: frame.minX + origin.x - padding,
+                y: baselineY - font.ascender - padding / 2,
+                width: frame.width + padding * 2,
+                height: font.ascender - font.descender + padding
+            ))
+            return true
+        }
+        return frames
     }
 
     private func layoutCheckboxes(_ slots: [(frame: CGRect, element: MarkdownElement)], in textView: MarkdownTextView) {
@@ -186,11 +223,19 @@ final class MarkdownDecorationView: NSView {
 
     enum Item: Equatable {
         case background(CGRect)
+        /// Inline code, with one frame per line it covers.
+        case codeSpan([CGRect])
         case bar(CGRect)
         case rule(CGRect)
         case bullet(CGRect)
         /// An ordered list number, right-aligned in its slot.
         case number(String, CGRect)
+    }
+
+    /// The quaternary fill that suits code blocks is too faint around short spans of
+    /// inline code in dark mode.
+    private static let codeSpanFill = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? .tertiarySystemFill : .quaternarySystemFill
     }
 
     var items: [Item] = [] {
@@ -205,6 +250,76 @@ final class MarkdownDecorationView: NSView {
         true
     }
 
+    /// One shape for inline code that wraps across lines, so the lines read as a single
+    /// background. Lines that share no horizontal extent can't join and get shapes of their own.
+    private static func codeSpanPath(_ frames: [CGRect]) -> NSBezierPath {
+        let path = NSBezierPath()
+        var lines: [CGRect] = []
+        for frame in frames {
+            if let last = lines.last,
+               !(last.midY < frame.midY && max(last.minX, frame.minX) < min(last.maxX, frame.maxX)) {
+                path.append(roundedOutline(of: lines))
+                lines.removeAll()
+            }
+            lines.append(frame)
+        }
+        if !lines.isEmpty {
+            path.append(roundedOutline(of: lines))
+        }
+        return path
+    }
+
+    /// The outline of lines stacked top to bottom, with every corner rounded, including the
+    /// inner corners where one line steps out from the next. Adjacent lines are made to meet
+    /// halfway, so they neither overlap nor leave a gap.
+    private static func roundedOutline(of lines: [CGRect]) -> NSBezierPath {
+        var tops = lines.map(\.minY)
+        var bottoms = lines.map(\.maxY)
+        for index in lines.indices.dropLast() {
+            let boundary = (lines[index].maxY + lines[index + 1].minY) / 2
+            bottoms[index] = boundary
+            tops[index + 1] = boundary
+        }
+
+        // Walk down the right edges and back up the left edges.
+        var points: [CGPoint] = []
+        for index in lines.indices {
+            points.append(CGPoint(x: lines[index].maxX, y: tops[index]))
+            points.append(CGPoint(x: lines[index].maxX, y: bottoms[index]))
+        }
+        for index in lines.indices.reversed() {
+            points.append(CGPoint(x: lines[index].minX, y: bottoms[index]))
+            points.append(CGPoint(x: lines[index].minX, y: tops[index]))
+        }
+
+        // Lines with the same edge produce repeated and straight-through points, which aren't corners.
+        points = points.enumerated().filter { index, point in point != points[(index + 1) % points.count] }.map(\.element)
+        let corners = points.indices.compactMap { index -> CGPoint? in
+            let previous = points[(index + points.count - 1) % points.count]
+            let point = points[index]
+            let next = points[(index + 1) % points.count]
+            let isStraight = (previous.x == point.x && point.x == next.x) || (previous.y == point.y && point.y == next.y)
+            return isStraight ? nil : point
+        }
+
+        let path = NSBezierPath()
+        guard let first = corners.first, let last = corners.last else { return path }
+        path.move(to: CGPoint(x: (last.x + first.x) / 2, y: (last.y + first.y) / 2))
+        for index in corners.indices {
+            let previous = corners[(index + corners.count - 1) % corners.count]
+            let corner = corners[index]
+            let next = corners[(index + 1) % corners.count]
+            let radius = min(4, distance(previous, corner) / 2, distance(corner, next) / 2)
+            path.appendArc(from: corner, to: next, radius: radius)
+        }
+        path.close()
+        return path
+    }
+
+    private static func distance(_ a: CGPoint, _ b: CGPoint) -> CGFloat {
+        hypot(b.x - a.x, b.y - a.y)
+    }
+
     override func hitTest(_ point: NSPoint) -> NSView? {
         nil
     }
@@ -215,6 +330,9 @@ final class MarkdownDecorationView: NSView {
             case .background(let rect):
                 NSColor.quaternarySystemFill.setFill()
                 NSBezierPath(roundedRect: rect, xRadius: 6, yRadius: 6).fill()
+            case .codeSpan(let frames):
+                Self.codeSpanFill.setFill()
+                Self.codeSpanPath(frames).fill()
             case .bar(let rect):
                 NSColor.tertiaryLabelColor.setFill()
                 NSBezierPath(roundedRect: rect, xRadius: rect.width / 2, yRadius: rect.width / 2).fill()

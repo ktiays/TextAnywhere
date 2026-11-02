@@ -14,7 +14,7 @@ final class MarkdownTheme {
     /// Every attribute the theme sets. Applying a style removes the ones it doesn't use, and
     /// leaves attributes that other parts of the system add untouched.
     static let managedKeys: [NSAttributedString.Key] = [
-        .font, .foregroundColor, .kern, .paragraphStyle, .strikethroughStyle, .backgroundColor,
+        .font, .foregroundColor, .kern, .paragraphStyle, .strikethroughStyle,
     ]
 
     private static let headingScales: [(MarkdownKind, CGFloat, NSFont.Weight)] = [
@@ -30,6 +30,8 @@ final class MarkdownTheme {
     static let indentStep: CGFloat = 18
     /// Extra room before a task's text, since a checkbox is wider than a bullet.
     static let checkboxIndent: CGFloat = 4
+    /// Horizontal room between inline code and the rounded background drawn around it.
+    static let codeSpanPadding: CGFloat = 3
 
     private struct StyleKey: Hashable {
         let kinds: UInt32
@@ -65,11 +67,12 @@ final class MarkdownTheme {
             attributes[.paragraphStyle] = paragraphStyle
         }
         // A tiny transparent font with negative kerning removes a concealed character's
-        // width while keeping it in the text, so offsets always match the source.
+        // width while keeping it in the text, so offsets always match the source. Concealed
+        // backticks keep a little width instead, as padding inside the code span's background.
         if isConcealed {
             attributes[.font] = NSFont.systemFont(ofSize: 0.01)
             attributes[.foregroundColor] = NSColor.clear
-            attributes[.kern] = -0.01
+            attributes[.kern] = kinds.contains(.codeSpan) ? Self.codeSpanPadding : -0.01
             return attributes
         }
 
@@ -78,9 +81,6 @@ final class MarkdownTheme {
         attributes[.foregroundColor] = color(kinds: kinds)
         if kinds.contains(.strikethrough) {
             attributes[.strikethroughStyle] = NSUnderlineStyle.single.rawValue
-        }
-        if kinds.contains(.codeSpan) {
-            attributes[.backgroundColor] = NSColor.quaternarySystemFill
         }
         return attributes
     }

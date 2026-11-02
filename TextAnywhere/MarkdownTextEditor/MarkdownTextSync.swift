@@ -217,6 +217,18 @@ final class MarkdownTextSync: NSObject, NSTextStorageDelegate, MarkdownTextRende
         engine.elements(in: range)
     }
 
+    func codeSpanRanges(in range: NSRange) -> [NSRange] {
+        var ranges: [NSRange] = []
+        for segment in engine.segments(in: range) where segment.kinds.contains(.codeSpan) && !segment.isConcealed {
+            if let last = ranges.last, NSMaxRange(last) == segment.range.location {
+                ranges[ranges.count - 1] = NSUnionRange(last, segment.range)
+            } else {
+                ranges.append(segment.range)
+            }
+        }
+        return ranges
+    }
+
     func isConcealed(at offset: Int) -> Bool {
         engine.segments(in: NSRange(location: offset, length: 1)).first?.isConcealed ?? false
     }
