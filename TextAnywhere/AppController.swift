@@ -152,7 +152,7 @@ final class AppController {
             }
             if !session.isOCRAvailable {
                 session.showError(
-                    "Enable OCR in Settings and configure \(settings.ocrModel.provider.name) in Settings → Providers."
+                    "Enable OCR, choose an enabled provider and an image-capable model in Settings → OCR, and configure its connection in Providers."
                 )
             }
             return

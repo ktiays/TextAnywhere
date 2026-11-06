@@ -178,7 +178,8 @@ final class SettingsTests: XCTestCase {
 
         let settings = AppSettings(defaults: defaults)
         XCTAssertTrue(settings.isOCREnabled)
-        XCTAssertEqual(settings.ocrModel, .glmOCR)
+        XCTAssertEqual(settings.ocrProviderID, settings.selectedProviderID)
+        XCTAssertEqual(settings.ocrModelID, settings.modelID(for: settings.selectedProviderID))
         XCTAssertEqual(settings.ocrMode, .recognizeOnly)
         XCTAssertFalse(settings.isOCRHTMLTableConversionEnabled)
         XCTAssertTrue(settings.isOCRScreenCaptureEnabled)
@@ -188,6 +189,9 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(settings.ocrShortcut, .defaultOCRShortcut)
 
         settings.isOCREnabled = false
+        settings.setProviderEnabled(true, for: .openAI)
+        settings.ocrProviderID = .openAI
+        settings.setOCRModelID("vision-model", for: .openAI)
         settings.ocrMode = .recognizeAndTranslate
         settings.isOCRHTMLTableConversionEnabled = true
         settings.isOCRScreenCaptureEnabled = false
@@ -198,6 +202,8 @@ final class SettingsTests: XCTestCase {
 
         let restored = AppSettings(defaults: defaults)
         XCTAssertFalse(restored.isOCREnabled)
+        XCTAssertEqual(restored.ocrProviderID, .openAI)
+        XCTAssertEqual(restored.ocrModelID, "vision-model")
         XCTAssertEqual(restored.ocrMode, .recognizeAndTranslate)
         XCTAssertTrue(restored.isOCRHTMLTableConversionEnabled)
         XCTAssertFalse(restored.isOCRScreenCaptureEnabled)
@@ -205,6 +211,48 @@ final class SettingsTests: XCTestCase {
         XCTAssertFalse(restored.isOCRFilePickerEnabled)
         XCTAssertTrue(restored.isOCRShortcutEnabled)
         XCTAssertEqual(restored.ocrShortcut, .defaultShortcut)
+    }
+
+    func testOCRModelsAreIndependentAndRememberedPerProvider() throws {
+        let suiteName = "SettingsTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let settings = AppSettings(defaults: defaults)
+        settings.setProviderEnabled(true, for: .openAI)
+        settings.setModelID("translation-model", for: .openAI)
+        settings.ocrProviderID = .openAI
+        XCTAssertEqual(settings.ocrModelID, "translation-model")
+
+        settings.setOCRModelID("vision-model", for: .openAI)
+        settings.ocrProviderID = .bailian
+        settings.setOCRModelID("qwen-vl-model", for: .bailian)
+        settings.ocrProviderID = .openAI
+
+        XCTAssertEqual(settings.ocrModelID, "vision-model")
+        XCTAssertEqual(settings.modelID(for: .openAI), "translation-model")
+        let restored = AppSettings(defaults: defaults)
+        XCTAssertEqual(restored.ocrModelID(for: .openAI), "vision-model")
+        XCTAssertEqual(restored.ocrModelID(for: .bailian), "qwen-vl-model")
+    }
+
+    func testOCRProviderFollowsEnabledProviders() throws {
+        let suiteName = "SettingsTests.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        defaults.set("glm-ocr", forKey: "ocrModel")
+        defaults.set("BigModel", forKey: "ocrProvider")
+        let settings = AppSettings(defaults: defaults)
+        XCTAssertEqual(settings.ocrProviderID, .bailian)
+        XCTAssertEqual(settings.ocrModelID, Provider.bailian.defaultModelID)
+
+        settings.setProviderEnabled(true, for: .openAI)
+        settings.setProviderEnabled(false, for: .bailian)
+        XCTAssertEqual(settings.ocrProviderID, .openAI)
+
+        settings.setProviderEnabled(false, for: .openAI)
+        XCTAssertTrue(settings.enabledProviders.isEmpty)
+        settings.setProviderEnabled(true, for: .ollama)
+        XCTAssertEqual(settings.ocrProviderID, .ollama)
     }
 
     func testSearchableMenuRanksExactAndPrefixMatchesFirst() {

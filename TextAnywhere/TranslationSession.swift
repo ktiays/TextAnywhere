@@ -32,7 +32,7 @@ final class TranslationSession {
     private(set) var detectedLanguageCode: String?
     private(set) var state: State = .idle
     private(set) var isRecognizingText = false
-    private(set) var isTranslatingRecognizedText = false
+    private(set) var isRecognizingAndTranslating = false
     var isMarkdownRenderingEnabled = false
     private(set) var selectedTarget: TargetApplication?
     private(set) var focusRequestID = 0
@@ -42,6 +42,7 @@ final class TranslationSession {
     private let insertionService: any TextInsertionService
     private let pasteboard: any PasteboardWriting
     private let applicationTracker: ApplicationTracker
+    private let ocrClient: OCRClient
     private let adapterFactory: (ProviderIdentifier) -> any TranslationProviderAdapter
     private var onInsertionStarted: (@MainActor () -> Void)?
     private var onSuccessfulInsertion: (@MainActor () -> Void)?
@@ -59,6 +60,7 @@ final class TranslationSession {
         insertionService: any TextInsertionService,
         pasteboard: any PasteboardWriting,
         applicationTracker: ApplicationTracker,
+        ocrClient: OCRClient = OCRClient(),
         adapterFactory: @escaping (ProviderIdentifier) -> any TranslationProviderAdapter
     ) {
         self.settings = settings
@@ -66,6 +68,7 @@ final class TranslationSession {
         self.insertionService = insertionService
         self.pasteboard = pasteboard
         self.applicationTracker = applicationTracker
+        self.ocrClient = ocrClient
         self.adapterFactory = adapterFactory
     }
 
@@ -240,7 +243,7 @@ final class TranslationSession {
 
     func refreshCredentialAvailability() {
         hasBailianAPIKey = hasAPIKey(for: .bailian)
-        hasOCRProviderAPIKey = hasAPIKey(for: settings.ocrModel.provider.id)
+        hasOCRProviderAPIKey = hasAPIKey(for: settings.ocrProviderID)
     }
 
     func handleEscape() {
@@ -261,8 +264,9 @@ final class TranslationSession {
 
     var isOCRAvailable: Bool {
         settings.isOCREnabled
-            && settings.isProviderEnabled(settings.ocrModel.provider.id)
-            && hasOCRProviderAPIKey
+            && settings.isProviderEnabled(settings.ocrProviderID)
+            && !settings.ocrModelID.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            && (!settings.ocrProvider.requiresAPIKey || hasOCRProviderAPIKey)
     }
 
     var isScreenCaptureOCRAvailable: Bool {
@@ -299,33 +303,33 @@ final class TranslationSession {
     func recognizeText(from source: OCRSource) {
         guard !isBusy else { return }
         do {
-            let model = settings.ocrModel
-            let configuration = try OCRConfiguration(
-                baseURL: settings.baseURL(for: model.provider.id),
-                model: model,
-                apiKey: credentials.apiKey(for: model.provider.id)
-            )
-            let translationConfiguration: ProviderConfiguration?
-            if settings.ocrMode == .recognizeAndTranslate {
-                guard hasAvailableProvider else {
-                    throw ProviderError.invalidConfiguration(
-                        "Enable a model provider in Settings before translating."
-                    )
-                }
-                translationConfiguration = try providerConfiguration(for: selectedProvider)
-            } else {
-                translationConfiguration = nil
+            guard settings.isOCREnabled, settings.isProviderEnabled(settings.ocrProviderID) else {
+                throw ProviderError.invalidConfiguration("Enable a provider and choose a model in Settings → OCR.")
             }
+            let configuration = try providerConfiguration(for: settings.ocrProvider, modelID: settings.ocrModelID)
+            let prompt = OCRPrompt.systemInstruction(
+                mode: settings.ocrMode,
+                languagePair: languagePair,
+                targetLanguageMode: targetLanguageMode
+            )
+            let client = ocrClient
             let convertsHTMLTables = settings.isOCRHTMLTableConversionEnabled
             state = .idle
             isRecognizingText = true
+            isRecognizingAndTranslating = settings.ocrMode == .recognizeAndTranslate
             recognitionTask = Task { [weak self] in
                 let result: Result<String, any Error>
                 do {
-                    let document = try await Task.detached(priority: .userInitiated) {
+                    let preparationTask = Task.detached(priority: .userInitiated) {
                         try OCRDocument(source: source)
-                    }.value
-                    let text = try await OCRClient().recognizeText(in: document, configuration: configuration)
+                    }
+                    let document = try await withTaskCancellationHandler {
+                        try await preparationTask.value
+                    } onCancel: {
+                        preparationTask.cancel()
+                    }
+                    try Task.checkCancellation()
+                    let text = try await client.recognizeText(in: document, prompt: prompt, configuration: configuration)
                     result = .success(convertsHTMLTables ? HTMLTableConverter.convertingTables(in: text) : text)
                 } catch {
                     result = .failure(error)
@@ -333,12 +337,8 @@ final class TranslationSession {
                 guard let self, !Task.isCancelled else { return }
                 switch result {
                 case .success(let text):
-                    if let translationConfiguration {
-                        await translateRecognizedText(text, configuration: translationConfiguration)
-                    } else {
-                        finishTextRecognition()
-                        appendRecognizedText(text)
-                    }
+                    finishTextRecognition()
+                    appendRecognizedText(text)
                 case .failure(let error):
                     finishTextRecognition()
                     showError(error.localizedDescription)
@@ -346,30 +346,6 @@ final class TranslationSession {
             }
         } catch {
             showError(error.localizedDescription)
-        }
-    }
-
-    /// Falls back to the recognized text when translation fails, so the recognition result
-    /// isn't lost.
-    private func translateRecognizedText(_ text: String, configuration: ProviderConfiguration) async {
-        isTranslatingRecognizedText = true
-        let targetLanguage = languagePair.targetLanguage(
-            for: settings.targetLanguageMode,
-            detectedLanguageCode: LanguageDetector.languageCode(of: text)
-        )
-        do {
-            let translatedText = try await adapterFactory(configuration.providerID).translate(
-                TranslationRequest(text: text, targetLanguage: targetLanguage),
-                configuration: configuration
-            )
-            guard !Task.isCancelled else { return }
-            finishTextRecognition()
-            appendRecognizedText(translatedText)
-        } catch {
-            guard !Task.isCancelled else { return }
-            finishTextRecognition()
-            appendRecognizedText(text)
-            showError("The recognized text couldn't be translated: \(error.localizedDescription)")
         }
     }
 
@@ -386,7 +362,7 @@ final class TranslationSession {
     private func finishTextRecognition() {
         recognitionTask = nil
         isRecognizingText = false
-        isTranslatingRecognizedText = false
+        isRecognizingAndTranslating = false
     }
 
     private var isBusy: Bool {
@@ -572,7 +548,7 @@ final class TranslationSession {
         }
     }
 
-    private func providerConfiguration(for provider: Provider) throws -> ProviderConfiguration {
+    private func providerConfiguration(for provider: Provider, modelID: String? = nil) throws -> ProviderConfiguration {
         let baseURLValue = settings.baseURL(for: provider.id)
             .trimmingCharacters(in: .whitespacesAndNewlines)
         guard let baseURL = URL(string: baseURLValue),
@@ -591,7 +567,7 @@ final class TranslationSession {
         return ProviderConfiguration(
             providerID: provider.id,
             baseURL: baseURL,
-            modelID: settings.modelID(for: provider.id),
+            modelID: modelID ?? settings.modelID(for: provider.id),
             apiKey: apiKey,
             thinkingEnabled: settings.thinkingEnabled(for: provider.id)
         )

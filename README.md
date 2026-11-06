@@ -11,7 +11,7 @@ Press a shortcut in any app, type or dictate in the floating editor, and send th
 - **Automatic target language.** Set a primary and secondary language. Text in your primary language is translated into the secondary one, and everything else into the primary one. You can also pick the target in the editor.
 - **One-key send.** The primary button either pastes the text as-is or translates and pastes it. <kbd>⌘</kbd><kbd>↩</kbd> triggers it.
 - **Voice input.** Dictate into the editor with Qwen speech recognition through Bailian.
-- **OCR.** Recognize text with GLM-OCR through BigModel from a screen selection, pasted or dropped images and PDFs, or a file. Optionally translate the result and convert HTML tables to Markdown tables.
+- **OCR.** Recognize text in a screen selection, pasted or dropped images and PDFs, or a file using an enabled provider and an image-capable model. Recognize and translate in a single request, with optional HTML-to-Markdown table conversion.
 - **Markdown editing.** Switch the editor between plain text and rendered Markdown.
 - **Automatic updates.** TextAnywhere checks GitHub Releases daily and can install new versions itself.
 

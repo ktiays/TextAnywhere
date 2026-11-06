@@ -8,27 +8,6 @@ import Foundation
 import ImageIO
 import UniformTypeIdentifiers
 
-enum OCRModel: String, CaseIterable, Identifiable, Sendable {
-
-    case glmOCR = "glm-ocr"
-
-    var id: String { rawValue }
-
-    var displayName: String {
-        switch self {
-        case .glmOCR:
-            "GLM-OCR"
-        }
-    }
-
-    var provider: Provider {
-        switch self {
-        case .glmOCR:
-            .bigModel
-        }
-    }
-}
-
 enum OCRMode: String, CaseIterable, Identifiable, Sendable {
 
     case recognizeOnly
@@ -95,32 +74,79 @@ enum OCRSource: Sendable {
 
 nonisolated struct OCRDocument: Sendable {
 
-    private static let maximumImageByteCount = 10_000_000
     private static let maximumPDFByteCount = 50_000_000
-    private static let maximumImagePixelSize = 4_096
+    private static let maximumDocumentByteCount = 20_000_000
+    private static let maximumPDFPageCount = 100
 
-    let data: Data
-    let contentType: UTType
-
-    var dataURI: String {
-        "data:\(contentType.preferredMIMEType ?? "application/octet-stream");base64,\(data.base64EncodedString())"
-    }
+    let images: [OCRImage]
 
     init(source: OCRSource) throws {
         switch source {
         case .fileURL(let url):
+            let hasAccess = url.startAccessingSecurityScopedResource()
+            defer {
+                if hasAccess { url.stopAccessingSecurityScopedResource() }
+            }
             let data = try Data(contentsOf: url)
             if UTType(filenameExtension: url.pathExtension)?.conforms(to: .pdf) == true {
                 guard data.count <= Self.maximumPDFByteCount else {
                     throw ProviderError.invalidConfiguration("PDF files must be 50 MB or smaller.")
                 }
-                self.init(data: data, contentType: .pdf)
+                images = try Self.renderPDF(data)
             } else {
-                try self.init(imageData: data)
+                images = [try OCRImage(imageData: data)]
             }
         case .imageData(let data):
-            try self.init(imageData: data)
+            images = [try OCRImage(imageData: data)]
         }
+    }
+
+    private static func renderPDF(_ data: Data) throws -> [OCRImage] {
+        guard let provider = CGDataProvider(data: data as CFData),
+              let document = CGPDFDocument(provider), !document.isEncrypted,
+              document.numberOfPages > 0 else {
+            throw ProviderError.invalidConfiguration("The PDF couldn't be read or is password-protected.")
+        }
+        guard document.numberOfPages <= maximumPDFPageCount else {
+            throw ProviderError.invalidConfiguration("Choose a PDF with 100 pages or fewer.")
+        }
+
+        var images: [OCRImage] = []
+        var byteCount = 0
+        for pageNumber in 1...document.numberOfPages {
+            try Task.checkCancellation()
+            let image = try autoreleasepool {
+                guard let page = document.page(at: pageNumber) else {
+                    throw ProviderError.invalidConfiguration("A PDF page couldn't be read.")
+                }
+                return try OCRImage(page: page)
+            }
+            byteCount += image.data.count
+            guard byteCount <= maximumDocumentByteCount else {
+                throw ProviderError.invalidConfiguration(
+                    "The rendered PDF is too large to recognize in one request. Choose a smaller PDF."
+                )
+            }
+            images.append(image)
+        }
+        return images
+    }
+}
+
+nonisolated struct OCRImage: Sendable {
+
+    private static let maximumImageByteCount = 5_000_000
+    private static let maximumImagePixelSize = 4_096
+
+    let data: Data
+    let contentType: UTType
+
+    var mimeType: String {
+        contentType.preferredMIMEType ?? "image/png"
+    }
+
+    var dataURI: String {
+        "data:\(mimeType);base64,\(data.base64EncodedString())"
     }
 
     private init(data: Data, contentType: UTType) {
@@ -128,16 +154,19 @@ nonisolated struct OCRDocument: Sendable {
         self.contentType = contentType
     }
 
-    /// GLM-OCR accepts PNG and JPEG images up to 10 MB. Other formats and oversized images are
-    /// re-encoded, downscaled, and rotated according to their EXIF orientation.
-    private init(imageData: Data) throws {
+    init(imageData: Data) throws {
         guard let imageSource = CGImageSourceCreateWithData(imageData as CFData, nil),
               let typeIdentifier = CGImageSourceGetType(imageSource) as String? else {
             throw ProviderError.invalidConfiguration("The image couldn't be read.")
         }
+        let properties = CGImageSourceCopyPropertiesAtIndex(imageSource, 0, nil) as? [CFString: Any]
+        let width = properties?[kCGImagePropertyPixelWidth] as? Int ?? 0
+        let height = properties?[kCGImagePropertyPixelHeight] as? Int ?? 0
+        let orientation = properties?[kCGImagePropertyOrientation] as? Int ?? 1
         if let type = UTType(typeIdentifier),
            type == .png || type == .jpeg,
-           imageData.count <= Self.maximumImageByteCount {
+           imageData.count <= Self.maximumImageByteCount,
+           max(width, height) <= Self.maximumImagePixelSize, orientation == 1 {
             self.init(data: imageData, contentType: type)
             return
         }
@@ -150,6 +179,41 @@ nonisolated struct OCRDocument: Sendable {
         guard let image = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
             throw ProviderError.invalidConfiguration("The image couldn't be read.")
         }
+        try self.init(image: image)
+    }
+
+    init(page: CGPDFPage) throws {
+        let bounds = page.getBoxRect(.cropBox)
+        guard bounds.width.isFinite, bounds.height.isFinite, bounds.width > 0, bounds.height > 0 else {
+            throw ProviderError.invalidConfiguration("A PDF page has an invalid size.")
+        }
+        let scale = min(2, CGFloat(Self.maximumImagePixelSize) / max(bounds.width, bounds.height))
+        let isRotated = page.rotationAngle % 180 != 0
+        let width = Int(ceil((isRotated ? bounds.height : bounds.width) * scale))
+        let height = Int(ceil((isRotated ? bounds.width : bounds.height) * scale))
+        guard let context = CGContext(
+            data: nil,
+            width: width,
+            height: height,
+            bitsPerComponent: 8,
+            bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(),
+            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else {
+            throw ProviderError.invalidConfiguration("A PDF page couldn't be rendered.")
+        }
+        let rect = CGRect(x: 0, y: 0, width: width, height: height)
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(rect)
+        context.concatenate(page.getDrawingTransform(.cropBox, rect: rect, rotate: 0, preserveAspectRatio: true))
+        context.drawPDFPage(page)
+        guard let image = context.makeImage() else {
+            throw ProviderError.invalidConfiguration("A PDF page couldn't be rendered.")
+        }
+        try self.init(image: image)
+    }
+
+    private init(image: CGImage) throws {
         if let png = Self.encode(image, as: .png), png.count <= Self.maximumImageByteCount {
             self.init(data: png, contentType: .png)
         } else if let jpeg = Self.encode(image, as: .jpeg, quality: 0.85),
@@ -169,70 +233,6 @@ nonisolated struct OCRDocument: Sendable {
         CGImageDestinationAddImage(destination, image, properties)
         guard CGImageDestinationFinalize(destination) else { return nil }
         return data as Data
-    }
-}
-
-struct OCRConfiguration: Sendable {
-
-    let endpoint: URL
-    let model: OCRModel
-    let apiKey: String
-
-    init(baseURL: String, model: OCRModel, apiKey: String?) throws {
-        guard let url = URL(string: baseURL.trimmingCharacters(in: .whitespacesAndNewlines)),
-              let scheme = url.scheme?.lowercased(),
-              ["https", "http"].contains(scheme), url.host != nil else {
-            throw ProviderError.invalidConfiguration(
-                "Enter a valid base URL in Settings → Providers → \(model.provider.name)."
-            )
-        }
-        guard let apiKey = apiKey?.trimmingCharacters(in: .whitespacesAndNewlines), !apiKey.isEmpty else {
-            throw ProviderError.invalidConfiguration(
-                "Set your \(model.provider.name) API key in Settings → Providers → \(model.provider.name)."
-            )
-        }
-        endpoint = url.appending(path: "layout_parsing")
-        self.model = model
-        self.apiKey = apiKey
-    }
-}
-
-struct OCRClient {
-
-    var session: URLSession = .shared
-
-    func recognizeText(in document: OCRDocument, configuration: OCRConfiguration) async throws -> String {
-        var request = URLRequest(url: configuration.endpoint)
-        request.httpMethod = "POST"
-        request.timeoutInterval = 120
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.setValue("Bearer \(configuration.apiKey)", forHTTPHeaderField: "Authorization")
-        request.httpBody = try JSONEncoder().encode(
-            LayoutParsingRequest(model: configuration.model.rawValue, file: document.dataURI)
-        )
-
-        let data = try await ProviderHTTPClient(session: session).send(request)
-        guard let response = try? JSONDecoder().decode(LayoutParsingResponse.self, from: data) else {
-            throw ProviderError.invalidResponse
-        }
-        let text = (response.markdown ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !text.isEmpty else {
-            throw ProviderError.invalidConfiguration("No text was recognized.")
-        }
-        return text
-    }
-}
-
-private struct LayoutParsingRequest: Encodable {
-    let model: String
-    let file: String
-}
-
-private struct LayoutParsingResponse: Decodable {
-    let markdown: String?
-
-    enum CodingKeys: String, CodingKey {
-        case markdown = "md_results"
     }
 }
 

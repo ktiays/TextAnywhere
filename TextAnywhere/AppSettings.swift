@@ -26,7 +26,8 @@ final class AppSettings {
         static let translationButtonVisible = "translationButtonVisible"
         static let primaryButtonAction = "primaryButtonAction"
         static let ocrEnabled = "ocrEnabled"
-        static let ocrModel = "ocrModel"
+        static let ocrProvider = "ocrProvider"
+        static let ocrModels = "ocrModels"
         static let ocrMode = "ocrMode"
         static let ocrHTMLTableConversionEnabled = "ocrHTMLTableConversionEnabled"
         static let ocrScreenCaptureEnabled = "ocrScreenCaptureEnabled"
@@ -131,9 +132,15 @@ final class AppSettings {
         }
     }
 
-    var ocrModel: OCRModel {
+    var ocrProviderID: ProviderIdentifier {
         didSet {
-            defaults.set(ocrModel.rawValue, forKey: Key.ocrModel)
+            defaults.set(ocrProviderID.rawValue, forKey: Key.ocrProvider)
+        }
+    }
+
+    private var ocrModelIDs: [String: String] {
+        didSet {
+            defaults.set(ocrModelIDs, forKey: Key.ocrModels)
         }
     }
 
@@ -206,13 +213,15 @@ final class AppSettings {
         let providerValue = defaults.string(forKey: Key.selectedProvider)
         let initialProviderID = providerValue.map(ProviderIdentifier.init(rawValue:)) ?? .bailian
         selectedProviderID = initialProviderID
+        let initialEnabledProviderIDs: Set<ProviderIdentifier>
         if let enabledProviderValues = defaults.stringArray(forKey: Key.enabledProviders) {
-            enabledProviderIDs = Set(
+            initialEnabledProviderIDs = Set(
                 enabledProviderValues.map(ProviderIdentifier.init(rawValue:))
             )
         } else {
-            enabledProviderIDs = [initialProviderID]
+            initialEnabledProviderIDs = [initialProviderID]
         }
+        enabledProviderIDs = initialEnabledProviderIDs
         let initialPrimaryLanguageCode = defaults.string(forKey: Key.primaryLanguage)
             ?? defaults.string(forKey: Key.legacyTargetLanguage)
             ?? TranslationLanguage.english.code
@@ -235,9 +244,12 @@ final class AppSettings {
             .flatMap(EditorAction.init(rawValue:))
             ?? .translateAndPaste
         isOCREnabled = defaults.object(forKey: Key.ocrEnabled) as? Bool ?? true
-        ocrModel = defaults.string(forKey: Key.ocrModel)
-            .flatMap(OCRModel.init(rawValue:))
-            ?? .glmOCR
+        let storedOCRProviderID = defaults.string(forKey: Key.ocrProvider)
+            .map(ProviderIdentifier.init(rawValue:)) ?? initialProviderID
+        ocrProviderID = Provider.presets.first {
+            $0.id == storedOCRProviderID && initialEnabledProviderIDs.contains($0.id)
+        }?.id ?? Provider.presets.first { initialEnabledProviderIDs.contains($0.id) }?.id ?? initialProviderID
+        ocrModelIDs = defaults.dictionary(forKey: Key.ocrModels) as? [String: String] ?? [:]
         ocrMode = defaults.string(forKey: Key.ocrMode)
             .flatMap(OCRMode.init(rawValue:))
             ?? .recognizeOnly
@@ -263,6 +275,22 @@ final class AppSettings {
 
     var enabledProviders: [Provider] {
         Provider.presets.filter { enabledProviderIDs.contains($0.id) }
+    }
+
+    var ocrProvider: Provider {
+        Provider.provider(for: ocrProviderID)
+    }
+
+    var ocrModelID: String {
+        ocrModelID(for: ocrProviderID)
+    }
+
+    func ocrModelID(for providerID: ProviderIdentifier) -> String {
+        ocrModelIDs[providerID.rawValue] ?? modelID(for: providerID)
+    }
+
+    func setOCRModelID(_ modelID: String, for providerID: ProviderIdentifier) {
+        ocrModelIDs[providerID.rawValue] = modelID
     }
 
     var languagePair: LanguagePair {
@@ -326,6 +354,9 @@ final class AppSettings {
             if shouldSelectProvider {
                 selectedProviderID = providerID
             }
+            if !enabledProviderIDs.contains(ocrProviderID) {
+                ocrProviderID = providerID
+            }
             return
         }
 
@@ -333,6 +364,10 @@ final class AppSettings {
         if selectedProviderID == providerID,
            let fallbackProvider = enabledProviders.first {
             selectedProviderID = fallbackProvider.id
+        }
+        if ocrProviderID == providerID,
+           let fallbackProvider = enabledProviders.first {
+            ocrProviderID = fallbackProvider.id
         }
     }
 
