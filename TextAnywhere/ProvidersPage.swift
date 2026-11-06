@@ -94,7 +94,7 @@ struct ProvidersPage: View {
                             } onCancel: {
                                 isModelMenuPresented = false
                             }
-                            .frame(width: 340, height: 280)
+                            .frame(width: 340, height: 420)
                         }
                     }
                 } label: {

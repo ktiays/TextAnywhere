@@ -203,7 +203,7 @@ private struct LanguagePickerButton: View {
             } onCancel: {
                 isMenuPresented = false
             }
-            .frame(width: 320, height: 300)
+            .frame(width: 320, height: 420)
         }
     }
 }

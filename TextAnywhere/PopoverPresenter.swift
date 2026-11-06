@@ -8,6 +8,9 @@ import SwiftUI
 @MainActor
 final class PopoverPanelPresenter: NSObject, NSPopoverDelegate {
 
+    /// Matches the corner radius of the system popover glass, so content can use concentric shapes.
+    private static let cornerRadius: CGFloat = 20
+
     private var popover: NSPopover?
     private weak var anchorView: NSView?
     private var fakePositioningView: NSView?
@@ -21,7 +24,10 @@ final class PopoverPanelPresenter: NSObject, NSPopoverDelegate {
 
         let screenSize = positioningView.window?.screen?.visibleFrame.size ?? .zero
 
-        let hostingController = NSHostingController(rootView: content())
+        let hostingController = NSHostingController(
+            rootView: content()
+                .containerShape(RoundedRectangle(cornerRadius: Self.cornerRadius))
+        )
         let idealSize = hostingController.sizeThatFits(in: screenSize)
         let view = hostingController.view
         view.frame = NSRect(origin: .zero, size: idealSize)

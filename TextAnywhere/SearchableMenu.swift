@@ -39,6 +39,7 @@ struct SearchableMenu: View {
     let items: [SearchableMenuItem]
     let selectedID: String?
     let searchPrompt: String
+    var isLoading = false
     let onSelect: (String) -> Void
     let onCancel: () -> Void
 
@@ -51,17 +52,31 @@ struct SearchableMenu: View {
     var body: some View {
         let filteredItems = self.filteredItems
         VStack(spacing: 0) {
-            TextField(searchPrompt, text: $searchText)
-                .textFieldStyle(.plain)
-                .focused($isSearchFieldFocused)
-                .padding()
-                .onSubmit {
-                    selectHighlightedItem()
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass")
+                    .foregroundStyle(.secondary)
+                TextField(searchPrompt, text: $searchText)
+                    .textFieldStyle(.plain)
+                    .focused($isSearchFieldFocused)
+                    .onSubmit {
+                        selectHighlightedItem()
+                    }
+                if isLoading {
+                    ProgressView()
+                        .controlSize(.small)
                 }
+            }
+            .padding(.horizontal, 10)
+            .padding(.vertical, 8)
+            .background(.quaternary, in: ConcentricRectangle(corners: .concentric(minimum: 8), isUniform: true))
+            .padding(6)
 
             Divider()
 
-            if filteredItems.isEmpty {
+            if filteredItems.isEmpty, isLoading {
+                ProgressView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if filteredItems.isEmpty {
                 ContentUnavailableView.search(text: trimmedSearchText)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -73,7 +88,7 @@ struct SearchableMenu: View {
                                     .id(item.id)
                             }
                         }
-                        .padding(8)
+                        .padding(6)
                     }
                     .onAppear {
                         if let highlightedID {
@@ -117,6 +132,7 @@ struct SearchableMenu: View {
                 }
             }
         }
+        .background(.thickMaterial)
         .fontDesign(.rounded)
     }
 
@@ -143,25 +159,28 @@ struct SearchableMenu: View {
     }
 
     private func row(for item: SearchableMenuItem) -> some View {
-        HStack {
+        let isHighlighted = highlightedID == item.id
+        return HStack {
             Text(item.title)
+                .foregroundStyle(isHighlighted ? Color.white : Color.primary)
                 .lineLimit(1)
             Spacer()
             if let detail = item.detail {
                 Text(detail)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(isHighlighted ? Color.white.opacity(0.75) : Color.secondary)
                     .lineLimit(1)
             }
             Image(systemName: "checkmark")
-                .foregroundStyle(.tint)
+                .fontWeight(.medium)
+                .foregroundStyle(isHighlighted ? Color.white : Color.primary)
                 .opacity(item.id == selectedID ? 1 : 0)
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 6)
         .background {
-            if highlightedID == item.id {
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(.tint.opacity(0.1))
+            if isHighlighted {
+                RoundedRectangle(cornerRadius: 8, style: .continuous)
+                    .fill(.tint)
             }
         }
         .contentShape(Rectangle())
