@@ -191,6 +191,9 @@ final class OCRTests: XCTestCase {
             let prompt = body["instructions"] as? String ?? ""
             XCTAssertTrue(prompt.contains("predominant language"))
             XCTAssertTrue(prompt.contains("Output only the translated text"))
+            let input = body["input"] as? [[String: Any]]
+            let content = input?.first?["content"] as? [[String: Any]]
+            XCTAssertEqual(content?.first?["text"] as? String, "Recognize and translate the text in these images.")
             return #"{"output":[{"type":"message","content":[{"type":"output_text","text":"<table><tr><th>名称</th></tr><tr><td>项目</td></tr></table>"}]}]}"#
         }
         let session = makeSession(settings: settings)
@@ -204,6 +207,26 @@ final class OCRTests: XCTestCase {
         XCTAssertTrue(session.draft.contains("| 名称 |"))
         XCTAssertFalse(session.draft.contains("<table>"))
         XCTAssertFalse(session.isRecognizingAndTranslating)
+        XCTAssertEqual(session.state, .idle)
+    }
+
+    func testSessionReplacesDraftWhenConfiguredToReplace() async throws {
+        let (settings, defaults, suiteName) = try makeSettings()
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        settings.setProviderEnabled(true, for: .openAI)
+        settings.ocrProviderID = .openAI
+        settings.setOCRModelID("vision-model", for: .openAI)
+        settings.ocrResultAction = .replace
+        OCRStubURLProtocol.handler = { _ in
+            #"{"output":[{"type":"message","content":[{"type":"output_text","text":"你好世界"}]}]}"#
+        }
+        let session = makeSession(settings: settings)
+        session.draft = "Existing draft"
+        session.recognizeText(from: .imageData(Self.pngData()))
+        try await waitForRecognition(session)
+
+        XCTAssertEqual(session.draft, "你好世界")
+        XCTAssertEqual(session.detectedLanguageCode, "zh")
         XCTAssertEqual(session.state, .idle)
     }
 

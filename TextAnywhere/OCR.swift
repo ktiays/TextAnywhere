@@ -25,6 +25,23 @@ enum OCRMode: String, CaseIterable, Identifiable, Sendable {
     }
 }
 
+enum OCRResultAction: String, CaseIterable, Identifiable, Sendable {
+
+    case append
+    case replace
+
+    var id: String { rawValue }
+
+    var displayName: String {
+        switch self {
+        case .append:
+            "Append to Draft"
+        case .replace:
+            "Replace Draft"
+        }
+    }
+}
+
 enum OCRSource: Sendable {
 
     case fileURL(URL)

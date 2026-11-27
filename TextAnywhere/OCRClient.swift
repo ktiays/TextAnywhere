@@ -16,6 +16,7 @@ struct OCRClient {
     func recognizeText(
         in document: OCRDocument,
         prompt: String,
+        userMessage: String = OCRPrompt.userMessage(mode: .recognizeOnly),
         configuration: ProviderConfiguration
     ) async throws -> String {
         let provider = Provider.provider(for: configuration.providerID)
@@ -59,7 +60,7 @@ struct OCRClient {
                     model: modelID,
                     instructions: prompt,
                     input: [OCRMessage(role: "user", content: .parts(
-                        [.inputText("Recognize the text in these images.")]
+                        [.inputText(userMessage)]
                             + document.images.map { .inputImage($0.dataURI) }
                     ))],
                     store: false,
@@ -73,7 +74,7 @@ struct OCRClient {
                     maxTokens: 8192,
                     system: prompt,
                     messages: [OCRMessage(role: "user", content: .parts(
-                        document.images.map { .image($0) } + [.text("Recognize the text in these images.")]
+                        document.images.map { .image($0) } + [.text(userMessage)]
                     ))],
                     thinking: configuration.thinkingEnabled ? OCRThinking(type: "adaptive") : nil
                 )
@@ -86,7 +87,7 @@ struct OCRClient {
                         OCRMessage(role: "system", content: .text(prompt)),
                         OCRMessage(
                             role: "user",
-                            content: .text("Recognize the text in these images."),
+                            content: .text(userMessage),
                             images: document.images.map { $0.data.base64EncodedString() }
                         ),
                     ],
@@ -101,7 +102,7 @@ struct OCRClient {
                     messages: [
                         OCRMessage(role: "system", content: .text(prompt)),
                         OCRMessage(role: "user", content: .parts(
-                            [.text("Recognize the text in these images.")]
+                            [.text(userMessage)]
                                 + document.images.map { .imageURL($0.dataURI) }
                         )),
                     ],

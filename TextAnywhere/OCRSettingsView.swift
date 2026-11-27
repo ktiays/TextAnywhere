@@ -107,6 +107,24 @@ struct OCRSettingsView: View {
                 }
                 .disabled(!settings.isOCREnabled)
 
+                LabeledContent("Recognized Text") {
+                    Picker(
+                        "Recognized Text",
+                        selection: Binding(
+                            get: { settings.ocrResultAction },
+                            set: { settings.ocrResultAction = $0 }
+                        )
+                    ) {
+                        ForEach(OCRResultAction.allCases) { action in
+                            Text(action.displayName)
+                                .tag(action)
+                        }
+                    }
+                    .labelsHidden()
+                    .frame(width: 220, alignment: .trailing)
+                }
+                .disabled(!settings.isOCREnabled)
+
                 Toggle(
                     isOn: Binding(
                         get: { settings.isOCRHTMLTableConversionEnabled },
@@ -118,7 +136,7 @@ struct OCRSettingsView: View {
                 }
                 .disabled(!settings.isOCREnabled)
             } footer: {
-                Text("Images are sent directly to the selected provider and model. Configure the connection in Providers. Recognize and Translate uses the editor’s language selection to recognize and translate in one request. PDF pages are sent as images.")
+                Text("Images are sent directly to the selected provider and model. Configure the connection in Providers. Recognize and Translate recognizes and translates in one request using your target language mode, detecting the image’s language independently when set to Automatic. PDF pages are sent as images.")
             }
 
             Section {

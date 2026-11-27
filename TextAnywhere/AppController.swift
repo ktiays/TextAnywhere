@@ -141,7 +141,7 @@ final class AppController {
     }
 
     /// Hides the editor while the user selects a screen region, then shows it again with the
-    /// recognized text appended to the draft.
+    /// recognized text added to the draft.
     func recognizeScreenRegion() {
         guard !isCapturingScreen else { return }
         let wasEditorVisible = panelController.isVisible

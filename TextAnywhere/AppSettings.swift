@@ -29,6 +29,7 @@ final class AppSettings {
         static let ocrProvider = "ocrProvider"
         static let ocrModels = "ocrModels"
         static let ocrMode = "ocrMode"
+        static let ocrResultAction = "ocrResultAction"
         static let ocrHTMLTableConversionEnabled = "ocrHTMLTableConversionEnabled"
         static let ocrScreenCaptureEnabled = "ocrScreenCaptureEnabled"
         static let ocrPasteAndDropEnabled = "ocrPasteAndDropEnabled"
@@ -150,6 +151,12 @@ final class AppSettings {
         }
     }
 
+    var ocrResultAction: OCRResultAction {
+        didSet {
+            defaults.set(ocrResultAction.rawValue, forKey: Key.ocrResultAction)
+        }
+    }
+
     var isOCRHTMLTableConversionEnabled: Bool {
         didSet {
             defaults.set(isOCRHTMLTableConversionEnabled, forKey: Key.ocrHTMLTableConversionEnabled)
@@ -253,6 +260,9 @@ final class AppSettings {
         ocrMode = defaults.string(forKey: Key.ocrMode)
             .flatMap(OCRMode.init(rawValue:))
             ?? .recognizeOnly
+        ocrResultAction = defaults.string(forKey: Key.ocrResultAction)
+            .flatMap(OCRResultAction.init(rawValue:))
+            ?? .append
         isOCRHTMLTableConversionEnabled = defaults.bool(forKey: Key.ocrHTMLTableConversionEnabled)
         isOCRScreenCaptureEnabled = defaults.object(forKey: Key.ocrScreenCaptureEnabled) as? Bool ?? true
         isOCRPasteAndDropEnabled = defaults.object(forKey: Key.ocrPasteAndDropEnabled) as? Bool ?? true

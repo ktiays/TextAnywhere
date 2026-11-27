@@ -307,16 +307,18 @@ final class TranslationSession {
                 throw ProviderError.invalidConfiguration("Enable a provider and choose a model in Settings → OCR.")
             }
             let configuration = try providerConfiguration(for: settings.ocrProvider, modelID: settings.ocrModelID)
+            let ocrMode = settings.ocrMode
             let prompt = OCRPrompt.systemInstruction(
-                mode: settings.ocrMode,
+                mode: ocrMode,
                 languagePair: languagePair,
                 targetLanguageMode: targetLanguageMode
             )
+            let userMessage = OCRPrompt.userMessage(mode: ocrMode)
             let client = ocrClient
             let convertsHTMLTables = settings.isOCRHTMLTableConversionEnabled
             state = .idle
             isRecognizingText = true
-            isRecognizingAndTranslating = settings.ocrMode == .recognizeAndTranslate
+            isRecognizingAndTranslating = ocrMode == .recognizeAndTranslate
             recognitionTask = Task { [weak self] in
                 let result: Result<String, any Error>
                 do {
@@ -329,7 +331,12 @@ final class TranslationSession {
                         preparationTask.cancel()
                     }
                     try Task.checkCancellation()
-                    let text = try await client.recognizeText(in: document, prompt: prompt, configuration: configuration)
+                    let text = try await client.recognizeText(
+                        in: document,
+                        prompt: prompt,
+                        userMessage: userMessage,
+                        configuration: configuration
+                    )
                     result = .success(convertsHTMLTables ? HTMLTableConverter.convertingTables(in: text) : text)
                 } catch {
                     result = .failure(error)
@@ -338,7 +345,7 @@ final class TranslationSession {
                 switch result {
                 case .success(let text):
                     finishTextRecognition()
-                    appendRecognizedText(text)
+                    applyRecognizedText(text)
                 case .failure(let error):
                     finishTextRecognition()
                     showError(error.localizedDescription)
@@ -349,8 +356,13 @@ final class TranslationSession {
         }
     }
 
-    private func appendRecognizedText(_ text: String) {
-        draft += draft.isEmpty ? text : "\n" + text
+    private func applyRecognizedText(_ text: String) {
+        switch settings.ocrResultAction {
+        case .append:
+            draft += draft.isEmpty ? text : "\n" + text
+        case .replace:
+            draft = text
+        }
         requestEditorFocus()
     }
 

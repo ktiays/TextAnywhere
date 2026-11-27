@@ -181,6 +181,7 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(settings.ocrProviderID, settings.selectedProviderID)
         XCTAssertEqual(settings.ocrModelID, settings.modelID(for: settings.selectedProviderID))
         XCTAssertEqual(settings.ocrMode, .recognizeOnly)
+        XCTAssertEqual(settings.ocrResultAction, .append)
         XCTAssertFalse(settings.isOCRHTMLTableConversionEnabled)
         XCTAssertTrue(settings.isOCRScreenCaptureEnabled)
         XCTAssertTrue(settings.isOCRPasteAndDropEnabled)
@@ -193,6 +194,7 @@ final class SettingsTests: XCTestCase {
         settings.ocrProviderID = .openAI
         settings.setOCRModelID("vision-model", for: .openAI)
         settings.ocrMode = .recognizeAndTranslate
+        settings.ocrResultAction = .replace
         settings.isOCRHTMLTableConversionEnabled = true
         settings.isOCRScreenCaptureEnabled = false
         settings.isOCRPasteAndDropEnabled = false
@@ -205,6 +207,7 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(restored.ocrProviderID, .openAI)
         XCTAssertEqual(restored.ocrModelID, "vision-model")
         XCTAssertEqual(restored.ocrMode, .recognizeAndTranslate)
+        XCTAssertEqual(restored.ocrResultAction, .replace)
         XCTAssertTrue(restored.isOCRHTMLTableConversionEnabled)
         XCTAssertFalse(restored.isOCRScreenCaptureEnabled)
         XCTAssertFalse(restored.isOCRPasteAndDropEnabled)

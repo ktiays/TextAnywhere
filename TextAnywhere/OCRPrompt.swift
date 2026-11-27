@@ -7,6 +7,15 @@ import Foundation
 
 enum OCRPrompt {
 
+    static func userMessage(mode: OCRMode) -> String {
+        switch mode {
+        case .recognizeOnly:
+            "Recognize the text in these images."
+        case .recognizeAndTranslate:
+            "Recognize and translate the text in these images."
+        }
+    }
+
     static func systemInstruction(
         mode: OCRMode,
         languagePair: LanguagePair,
